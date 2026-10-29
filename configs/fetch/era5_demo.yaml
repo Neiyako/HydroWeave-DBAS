@@ -1,0 +1,17 @@
+# ERA5 小体量下载演示配置（CDS API）
+# 用途：验证 fetch → catalog 管理链路。首次真实下载前需配置 CDS 凭证：
+#   方式一: 环境变量 CDSAPI_URL 与 CDSAPI_KEY
+#   方式二: ~/.cdsapirc（见 https://cds.climate.copernicus.eu/how-to-api）
+#
+# 请求粒度：每个 (变量集 × 年 × 月) 一个最小请求，失败重试代价小。
+# 该示例为月平均、单变量、小区域，单文件通常只有几百 KB。
+
+dataset: reanalysis-era5-single-levels-monthly-means
+product_type: monthly_averaged_reanalysis
+variables:
+  - 2m_temperature
+years: ["2024"]
+months: ["01", "02"]
+area: [30, 110, 40, 120]        # [北, 西, 南, 东]，中国东部小区域
+target_dir: data/downloads      # 下载根目录（同时注册为数据卷）
+volume_id: downloads            # 下载文件登记到 catalog 的卷 ID

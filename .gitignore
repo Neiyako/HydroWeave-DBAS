@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# 运行数据（数据库、报告、下载、备份）一律不入 Git
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 凭证与机器专属配置
+.env
+.cdsapirc
+configs/local*.yaml
+
+# 系统文件
+.DS_Store

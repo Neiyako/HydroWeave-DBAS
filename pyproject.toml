@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbas"
+version = "0.1.0"
+description = "DBAS: ERA5 科研数据管理与分析系统（Data Management and Analysis System）"
+requires-python = ">=3.10"
+dependencies = [
+    "netCDF4>=1.7",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "PyYAML>=6.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+fetch = ["cdsapi>=0.7"]
+eda = ["xarray>=2024.1", "matplotlib>=3.8"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+dbas = "dbas.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

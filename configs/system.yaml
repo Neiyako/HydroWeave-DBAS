@@ -1,0 +1,25 @@
+# DBAS 系统配置（覆盖内置默认值；机器专属路径请勿提交）
+# 全部字段可省略，省略即用内置默认。
+
+# 数据管理目录（数据库/报告/临时文件所在），相对项目根
+# home: data
+
+# database:
+#   path: data/catalog.db
+
+scan:
+  batch_size: 20        # 每批最大文件数
+  budget_s: 60          # 单次运行时间预算（秒）
+  nc_extensions: [".nc", ".nc4", ".cdf"]
+
+scheduler:
+  max_attempts: 3
+  retry_delay_s: 5
+  stale_running_s: 600
+
+resource:
+  # 注意：这是软警戒线而非绝对安全保证，见 docs/data-safety.md
+  max_rss_mb: 3072
+  min_available_mb: 1024
+
+log_level: INFO

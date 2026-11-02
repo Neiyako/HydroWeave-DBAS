@@ -8,9 +8,13 @@ import sys
 import time
 from pathlib import Path
 
+from dbas.analysis.datasets import detect_dataset, ensure_builtin_datasets
+from dbas.analysis.profile import profile_one
 from dbas.catalog.db import current_version
 from dbas.catalog.repository import Catalog, VolumeOffline
 from dbas.core.config import ensure_dirs, load_config
+from dbas.qc.rules import run_dataset_checks
+from dbas.reports.profile_qc import profile_qc_report
 from dbas.core.exceptions import DbasError
 from dbas.core.logging import get_logger, setup_logging
 from dbas.resource_guard.guard import ResourceGuard
@@ -23,10 +27,22 @@ log = get_logger("cli")
 
 
 def _open_catalog(cfg, read_only: bool = False) -> Catalog:
+    # 只读命令也先确保 schema 迁移完成；迁移本身是写操作，只在需要时发生
+    if read_only and cfg.db_path.exists():
+        with Catalog(cfg.db_path):
+            pass
     cat = Catalog(cfg.db_path, read_only=read_only)
     if not read_only:
         ensure_dirs(cfg)
     return cat
+
+
+def _nc_extensions(cfg) -> set[str]:
+    return {str(e).lower() for e in cfg.section("scan")["nc_extensions"]}
+
+
+def _is_netcdf_path(rel_path: str, extensions: set[str]) -> bool:
+    return Path(rel_path).suffix.lower() in extensions
 
 
 def _print_summary(s, prefix: str = "运行结果") -> None:
@@ -64,6 +80,16 @@ def cmd_status(args, cfg) -> int:
         print(f"    - {v['volume_id']} [{v['status']}] {v['last_mount_path'] or v['root_path']}")
     print(f"  文件状态: {s['files_by_status'] or '（无记录）'}")
     print(f"  解析状态: {s['files_by_parse'] or '（无记录）'}")
+    by_ds = s.get("files_by_dataset") or {}
+    if by_ds:
+        shown = {k: v for k, v in by_ds.items() if k}
+        if shown:
+            print(f"  数据集文件: {shown}")
+        if by_ds.get(None):
+            print(f"  未分组文件: {by_ds[None]}")
+    print(f"  已画像文件: {s.get('profiled_files', 0)}")
+    if s.get("quality_by_severity"):
+        print(f"  QC 发现: {s['quality_by_severity']}")
     print(f"  任务队列: {s['tasks_by_status'] or '（空）'}")
     return 0
 
@@ -88,7 +114,10 @@ def cmd_volume_register(args, cfg) -> int:
 
 def cmd_scan(args, cfg) -> int:
     scan_cfg = cfg.section("scan")
-    extensions = scan_cfg["nc_extensions"]
+    nc_extensions = scan_cfg["nc_extensions"]
+    extensions = scan_cfg.get("inventory_extensions") or nc_extensions
+    scan_kwargs = {"netcdf_extensions": nc_extensions,
+                   "exclude_dirs": scan_cfg.get("exclude_dirs") or []}
     if not args.volume:
         print("错误: 需要 --volume（先用 `volume register` 注册）", file=sys.stderr)
         return 2
@@ -97,14 +126,16 @@ def cmd_scan(args, cfg) -> int:
             if args.mode == "inventory":
                 run_id = cat.start_scan_run("inventory", {"volume": args.volume})
                 stats = scan_inventory(cat, args.volume, extensions,
-                                       enqueue_metadata=args.enqueue_metadata)
+                                       enqueue_metadata=args.enqueue_metadata,
+                                       **scan_kwargs)
                 cat.finish_scan_run(run_id, "done", stats.seen, stats.ok or stats.seen,
                                     0, f"new/changed={stats.new} missing_pending={stats.missing_pending}")
                 _print_scan_stats(stats)
             elif args.mode == "incremental":
                 run_id = cat.start_scan_run("incremental", {"volume": args.volume})
                 stats = scan_inventory(cat, args.volume, extensions,
-                                       enqueue_metadata=True, incremental=True)
+                                       enqueue_metadata=True, incremental=True,
+                                       **scan_kwargs)
                 cat.finish_scan_run(run_id, "done", stats.seen, stats.new,
                                     0, f"changed={stats.changed}")
                 _print_scan_stats(stats)
@@ -123,6 +154,128 @@ def cmd_scan(args, cfg) -> int:
 def _print_scan_stats(st: ScanStats) -> None:
     print(f"[扫描] 发现 {st.seen} 个文件 | 新增/变化 {st.new} "
           f"| 待确认缺失 {st.missing_pending} | 耗时 {st.elapsed_s():.1f}s")
+
+
+# --------------------------------------------------------------------------
+# 数据集 / 内容画像 / QC
+# --------------------------------------------------------------------------
+
+def cmd_dataset(args, cfg) -> int:
+    if args.action == "list":
+        if not cfg.db_path.exists():
+            print("目录数据库尚未创建。先执行 volume register + scan。")
+            return 0
+        with _open_catalog(cfg, read_only=True) as cat:
+            rows = cat.list_datasets()
+        if not rows:
+            print("（尚未注册数据集）")
+            return 0
+        print(f"{'数据集':<20} {'文件':>6} {'其中.nc':>8} {'已解析':>6} "
+              f"{'已画像':>6}  标签")
+        for r in rows:
+            print(f"{r['dataset_id']:<20} {r['files']:>6} "
+                  f"{r.get('nc_files', 0):>8} {r['parsed']:>6} "
+                  f"{r['profiled']:>6}  {r['label']}")
+        return 0
+    if args.action == "assign":
+        exts = _nc_extensions(cfg)
+        with _open_catalog(cfg) as cat:
+            ensure_builtin_datasets(cat)
+            counts: dict[str, int] = {}
+            files = [f for f in cat.iter_files(
+                volume_id=args.volume, status="active")
+                if _is_netcdf_path(f["rel_path"], exts)]
+            for f in files:
+                ds = detect_dataset(f["rel_path"], f["file_name"])
+                cat.set_file_dataset(f["file_id"], ds)
+                counts[ds] = counts.get(ds, 0) + 1
+            n = len(files)
+        print(f"已为 {n} 个文件分配数据集: {counts}")
+        return 0
+    print(f"未知 dataset 操作: {args.action}", file=sys.stderr)
+    return 2
+
+
+def cmd_profile(args, cfg) -> int:
+    pcfg = cfg.section("profile")
+    with _open_catalog(cfg) as cat:
+        ensure_builtin_datasets(cat)
+        exts = _nc_extensions(cfg)
+        files = [f for f in cat.iter_files(
+            volume_id=args.volume, status="active")
+            if _is_netcdf_path(f["rel_path"], exts)]
+        if not files:
+            print(f"卷 {args.volume} 中没有 active NetCDF 文件"
+                  f"（先 scan --mode inventory）", file=sys.stderr)
+            return 2
+
+        ds_counts: dict[str, int] = {}
+        for f in files:
+            ds = detect_dataset(f["rel_path"], f["file_name"])
+            if f.get("dataset_id") != ds:
+                cat.set_file_dataset(f["file_id"], ds)
+            ds_counts[ds] = ds_counts.get(ds, 0) + 1
+
+        candidates = [f for f in files if f.get("parse_status") != "failed"]
+        if args.limit is not None:
+            candidates = candidates[:args.limit]
+        created = 0
+        for f in candidates:
+            mtime = int(f["mtime"]) if f["mtime"] else 0
+            _, ok = cat.enqueue_task(
+                "profile_nc",
+                {"file_id": f["file_id"], "volume_id": f["volume_id"],
+                 "rel_path": f["rel_path"]},
+                dedup_key=f"profile_nc:{f['file_id']}:{mtime}")
+            created += ok
+        print(f"[画像] 卷 {args.volume}: active {len(files)} 个，"
+              f"本次候选 {len(candidates)} 个，新入队 {created} 个；"
+              f"数据集分布 {ds_counts}")
+
+        res = cfg.section("resource")
+        sched = cfg.section("scheduler")
+        runner = Runner(
+            cat, {"profile_nc": profile_one},
+            budget_s=args.budget if args.budget is not None
+            else pcfg["budget_s"],
+            batch_limit=args.batch_size if args.batch_size is not None
+            else pcfg["batch_size"],
+            guard=ResourceGuard(res["max_rss_mb"], res["min_available_mb"]),
+            retry_delay_s=sched["retry_delay_s"], resume=True)
+        summary = runner.run(types=["profile_nc"])
+        _print_summary(summary)
+
+        dataset_ids = sorted(ds_counts)
+        run_dataset_checks(cat, dataset_ids)
+        out = profile_qc_report(cat, cfg.reports_dir, volume_id=args.volume)
+        print(f"报告: {out}")
+    return 0
+
+
+def cmd_qc(args, cfg) -> int:
+    if args.action == "run":
+        return cmd_profile(args, cfg)
+    if args.action == "report":
+        if not cfg.db_path.exists():
+            print("目录数据库尚未创建。先执行 scan 与 profile。",
+                  file=sys.stderr)
+            return 2
+        with _open_catalog(cfg) as cat:
+            if args.dataset:
+                dataset_ids = [args.dataset]
+            elif args.volume:
+                dataset_ids = cat.dataset_ids_for_volume(args.volume)
+            else:
+                dataset_ids = [d["dataset_id"] for d in cat.list_datasets()
+                               if d.get("nc_files")]
+            run_dataset_checks(cat, dataset_ids)
+            out = profile_qc_report(cat, cfg.reports_dir,
+                                    volume_id=args.volume,
+                                    dataset_id=args.dataset)
+        print(f"报告: {out}")
+        return 0
+    print(f"未知 qc 操作: {args.action}", file=sys.stderr)
+    return 2
 
 
 def _run_task_queue(cat: Catalog, cfg, types: list[str], args) -> None:
@@ -181,7 +334,7 @@ def _enqueue_file_tasks(cat: Catalog, type_: str, volume_id: str | None) -> None
 
 
 def cmd_tasks(args, cfg) -> int:
-    with _open_catalog(cfg, read_only=(args.action != "prune")) as cat:
+    with _open_catalog(cfg, read_only=args.action not in ("prune", "cancel")) as cat:
         if args.action == "list":
             rows = cat.list_tasks(status=args.status, limit=args.limit)
             if not rows:
@@ -200,6 +353,13 @@ def cmd_tasks(args, cfg) -> int:
                 print(f"{k}: {t[k]}")
             print(f"params: {t['params_json']}")
             print(f"result: {t['result_json']}")
+        elif args.action == "cancel":
+            if cat.cancel_task(args.task_id):
+                print(f"任务 {args.task_id} 已取消")
+            else:
+                print(f"无法取消（任务不存在或已成功）: {args.task_id}",
+                      file=sys.stderr)
+                return 2
         elif args.action == "prune":
             # 清理已完成任务，防止队列无限膨胀（历史保留在 task_attempts）
             cur = cat.conn.execute(
@@ -257,6 +417,101 @@ def cmd_db(args, cfg) -> int:
               "  4) python -m dbas scan --volume ... --mode inventory --enqueue-metadata")
         return 0
     print(f"未知 db 操作: {args.action}", file=sys.stderr)
+    return 2
+
+
+# --------------------------------------------------------------------------
+# subset：区域裁切（L1）
+# --------------------------------------------------------------------------
+
+def cmd_subset(args, cfg) -> int:
+    from dbas.analysis.regions import get_region, overlaps_file_grid
+    from dbas.analysis.subset import ensure_analysis_volume, subset_one
+
+    acfg = cfg.section("analysis")
+    region_name = getattr(args, "region", None) or acfg["region"]
+
+    if args.action == "plan":
+        bbox = get_region(region_name)
+        with _open_catalog(cfg, read_only=True) as cat:
+            files = list(cat.iter_files(volume_id=args.volume, status="active"))
+        if not files:
+            print(f"卷 {args.volume} 中没有 active 文件"
+                  f"（先 scan --mode inventory）", file=sys.stderr)
+            return 2
+        hit = miss = unknown = 0
+        print(f"区域 {region_name}: {bbox.label}")
+        for f in files:
+            lr = (f["lat_min"], f["lat_max"]) if f["lat_min"] is not None else None
+            gr = (f["lon_min"], f["lon_max"]) if f["lon_min"] is not None else None
+            ov = overlaps_file_grid(bbox, lr, gr)
+            tag = "?" if ov is None else ("✔" if ov else "×")
+            if ov is None:
+                unknown += 1
+            elif ov:
+                hit += 1
+            else:
+                miss += 1
+            tr = (f"{(f['time_min'] or '?')[:10]}..{(f['time_max'] or '?')[:10]}")
+            print(f"  [{tag}] {f['rel_path']}  {tr}  "
+                  f"lat{lr and tuple(round(x,1) for x in lr)} "
+                  f"lon{gr and tuple(round(x,1) for x in gr)}")
+        print(f"合计 {len(files)} 个文件 | 相交 {hit} | 不相交 {miss} | 范围未知 {unknown}"
+              f"（未解析的先跑 scan --mode metadata）")
+        if hit or unknown:
+            print(f"入队: python -m dbas subset enqueue --volume {args.volume} "
+                  f"--region {region_name}")
+        return 0
+
+    if args.action == "enqueue":
+        bbox = get_region(region_name)
+        variables = ([v.strip() for v in args.variables.split(",") if v.strip()]
+                     if args.variables else None)
+        var_sig = ",".join(sorted(variables)) if variables else "all"
+        with _open_catalog(cfg) as cat:
+            ensure_analysis_volume(cat, cfg)
+            files = list(cat.iter_files(volume_id=args.volume, status="active"))
+            created = skipped = 0
+            for f in files:
+                lr = (f["lat_min"], f["lat_max"]) if f["lat_min"] is not None else None
+                gr = (f["lon_min"], f["lon_max"]) if f["lon_min"] is not None else None
+                if overlaps_file_grid(bbox, lr, gr) is False:
+                    continue  # 明确不相交的不入队；未知的仍尝试（解析后可判）
+                mtime = int(f["mtime"]) if f["mtime"] else 0
+                _, ok = cat.enqueue_task(
+                    "subset_nc",
+                    {"file_id": f["file_id"], "volume_id": f["volume_id"],
+                     "rel_path": f["rel_path"], "region": region_name,
+                     "variables": variables, "force": bool(args.force)},
+                    dedup_key=f"subset_nc:{f['file_id']}:{mtime}:{region_name}"
+                              f":{var_sig}:{int(bool(args.force))}")
+                created += ok
+                skipped += not ok
+        print(f"入队裁切任务 {created} 个，跳过重复 {skipped} 个 → "
+              f"输出卷 {acfg['volume_id']}（{cfg.analysis_dir}）")
+        print("执行: python -m dbas subset run")
+        return 0
+
+    if args.action == "run":
+        with _open_catalog(cfg) as cat:
+            def handler(params, catalog, ctx):
+                return subset_one(params, catalog, ctx, cfg=cfg)
+
+            sched = cfg.section("scheduler")
+            res = cfg.section("resource")
+            runner = Runner(cat, {"subset_nc": handler},
+                            budget_s=args.budget if args.budget is not None
+                            else acfg["budget_s"],
+                            batch_limit=args.batch_size if args.batch_size is not None
+                            else acfg["batch_size"],
+                            guard=ResourceGuard(res["max_rss_mb"],
+                                                res["min_available_mb"]),
+                            retry_delay_s=sched["retry_delay_s"], resume=True)
+            summary = runner.run(types=["subset_nc"])
+            _print_summary(summary)
+        return 0
+
+    print(f"未知 subset 操作: {args.action}", file=sys.stderr)
     return 2
 
 
@@ -351,6 +606,8 @@ def build_parser() -> argparse.ArgumentParser:
     tl.add_argument("--status", default=None)
     tl.add_argument("--limit", type=int, default=50)
     tsub.add_parser("show").add_argument("task_id")
+    tsub.add_parser("cancel", help="取消未完成任务（废弃写错参数的历史任务）"
+                    ).add_argument("task_id")
     tsub.add_parser("prune", help="清理已完成任务（防队列膨胀）")
 
     sp = sub.add_parser("report", help="生成报告")
@@ -361,6 +618,46 @@ def build_parser() -> argparse.ArgumentParser:
     dsub.add_parser("check")
     dsub.add_parser("backup")
     dsub.add_parser("rebuild", help="显示重建数据库步骤")
+
+    sp = sub.add_parser("subset", help="区域裁切（主高原 ARD 产出）")
+    ssub = sp.add_subparsers(dest="action", required=True)
+    pl = ssub.add_parser("plan", help="预览相交情况（不读数据，不写库）")
+    pl.add_argument("--volume", required=True)
+    pl.add_argument("--region", default=None)
+    en = ssub.add_parser("enqueue", help="把裁切任务入队")
+    en.add_argument("--volume", required=True)
+    en.add_argument("--region", default=None)
+    en.add_argument("--variables", default=None,
+                    help="逗号分隔变量白名单（默认保留全部）")
+    en.add_argument("--force", action="store_true", help="已存在的产物也重新生成")
+    rn = ssub.add_parser("run", help="执行裁切任务（分批/断点续跑）")
+    rn.add_argument("--budget", type=float, default=None)
+    rn.add_argument("--batch-size", type=int, default=None)
+
+    sp = sub.add_parser("dataset", help="数据集分组与识别")
+    dsub = sp.add_subparsers(dest="action", required=True)
+    dsub.add_parser("list", help="列出数据集及文件/解析/画像计数")
+    da = dsub.add_parser("assign", help="按路径规则给卷内文件分配数据集")
+    da.add_argument("--volume", required=True)
+
+    sp = sub.add_parser("profile", help="内容画像 + QC（抽样读数据）")
+    sp.add_argument("--volume", required=True)
+    sp.add_argument("--limit", type=int, default=None,
+                    help="本次最多入队/处理文件数（默认全部入队）")
+    sp.add_argument("--batch-size", type=int, default=None)
+    sp.add_argument("--budget", type=float, default=None,
+                    help="单次运行时间预算（秒）")
+
+    sp = sub.add_parser("qc", help="质量检查与报告")
+    qsub = sp.add_subparsers(dest="action", required=True)
+    qrun = qsub.add_parser("run", help="执行内容画像 + QC 任务")
+    qrun.add_argument("--volume", required=True)
+    qrun.add_argument("--limit", type=int, default=None)
+    qrun.add_argument("--batch-size", type=int, default=None)
+    qrun.add_argument("--budget", type=float, default=None)
+    qrep = qsub.add_parser("report", help="生成内容画像 + QC 报告")
+    qrep.add_argument("--volume", default=None)
+    qrep.add_argument("--dataset", default=None)
 
     sp = sub.add_parser("fetch", help="ERA5 CDS API 下载管理")
     fsub = sp.add_subparsers(dest="action", required=True)
@@ -378,6 +675,8 @@ _DISPATCH = {
     "status": cmd_status, "volume": None, "scan": cmd_scan,
     "verify": cmd_verify, "checksum": cmd_checksum, "tasks": cmd_tasks,
     "report": cmd_report, "db": cmd_db, "fetch": cmd_fetch,
+    "subset": cmd_subset, "dataset": cmd_dataset, "profile": cmd_profile,
+    "qc": cmd_qc,
 }
 
 

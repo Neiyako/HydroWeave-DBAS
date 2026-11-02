@@ -1,0 +1,4 @@
+#!/bin/sh
+# DBAS launcher: 不依赖 site-packages 的 .pth（iCloud/同步代理会把 .pth 标记为 hidden，
+# 导致 site.py 跳过 editable 安装路径），直接用 PYTHONPATH 指向 src。
+exec env PYTHONPATH="$(dirname "$0")/../src:${PYTHONPATH}" "$(dirname "$0")/../.venv/bin/python" -m dbas "$@"

@@ -28,10 +28,26 @@ catalog → core（配置、异常）
 ## 数据库（v1）关键关系
 
 - `volumes 1—N files`（volume_id），文件主键 = sha1(volume_id + rel_path)。
+- `datasets 1—N files`（dataset_id）：数据集跨卷、卷可混放多个数据集。
 - `files 1—N variables / dimensions`（file_id，解析成功后整体替换）。
+- `files 1—1 file_profiles`；`file_profiles 1—N variable_profiles`（画像结果）。
+- `quality_reports` 记录文件/变量/数据集级发现与证据（text JSON）。
 - `tasks 1—N task_attempts`（每次认领一条尝试记录）。
 - `scan_runs` 记录每次 CLI 扫描运行的模式与统计。
 - `schema_migrations` 驱动版本化迁移（新增版本在 `catalog/db.py` 追加 SQL）。
+
+## 应用层：数据集 / 内容画像 / QC
+
+- 数据集识别只依赖卷内路径/文件名（`analysis/datasets.py`），不读内容；
+  无法识别的归入 `unknown`，不猜测。
+- `profile_nc` 任务抽样读取首/末时次（层全量、空间跨步），写
+  `file_profiles` / `variable_profiles`，并执行文件级 QC；原始文件只读。
+- 文件级规则：R001 截断（nc3 按维度/类型推算大小）、R002 末时次常数、
+  R003 fill 比例、R004 物理范围、R005 负比湿、R006 时间轴、
+  R007 常数场、R008 轴缺失、R009 未声明的 -999 类缺测哨兵。
+- 数据集级规则：R101 轴签名不一致、R102 日期缺变量、R103 整日缺失、
+  R104 重复日期+变量、R105 数据集变量整体缺失。
+- 报告由 `reports/profile_qc.py` 从 catalog 生成，不重复读原始数据。
 
 ## 任务生命周期
 

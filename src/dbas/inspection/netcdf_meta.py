@@ -45,7 +45,7 @@ class ParseResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _fmt_of(ds) -> str:
+def fmt_of(ds) -> str:
     f = getattr(ds, "file_format", "") or ""
     if "NETCDF4" in f and "CLASSIC" not in f:
         return "nc4"
@@ -71,6 +71,15 @@ def _decode_scalar(value) -> str | None:
     return str(value)
 
 
+def _to_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_netcdf_header(path) -> ParseResult:
     """解析单个 NetCDF 文件的头部元数据。失败抛 NetcdfParseError。"""
     path = str(path)
@@ -85,7 +94,7 @@ def parse_netcdf_header(path) -> ParseResult:
         raise NetcdfParseError(f"NetCDF 打开失败（可能损坏或格式未知）: {e}") from e
 
     try:
-        result.format = _fmt_of(ds)
+        result.format = fmt_of(ds)
         result.global_attrs = {
             k: _decode_scalar(ds.getncattr(k)) for k in ds.ncattrs()}
         result.dimensions = [
@@ -106,6 +115,9 @@ def parse_netcdf_header(path) -> ParseResult:
                 # 缺测语义可能由多个属性表达，全部保留，交由 QC/人工判断
                 "fill_value": attrs.get("_FillValue")
                               or attrs.get("missing_value"),
+                # int16 打包参数：分析层据此判断数值是否已被 netCDF4 自动解码
+                "scale_factor": _to_float(getattr(var, "scale_factor", None)),
+                "add_offset": _to_float(getattr(var, "add_offset", None)),
             })
 
         _extract_time(ds, result)
@@ -165,7 +177,16 @@ def _extract_spatial(ds, result: ParseResult) -> None:
                 result.warnings.append(
                     f"{cname} 为 {var.ndim} 维曲线网格，范围记为未知")
                 continue
-            vals = var[:16] if len(var) > 16 else var[:]
+            # 一维坐标数组很小（全球 0.25° 也才 1440 个值），必须全量读取：
+            # 只采样前 N 个会把降序/全球轴的范围错记成一小段（裁切相交判断会依赖它）
+            n = len(var)
+            if n > MAX_TIME_SAMPLES:  # 病态超大坐标轴：全量 + 首尾兜底采样
+                idx = np.unique(np.linspace(0, n - 1, 4096, dtype=np.int64))
+                vals = var[idx]
+                result.warnings.append(
+                    f"{cname} 轴长度异常({n})，按 4096 点采样估计范围")
+            else:
+                vals = var[:]
             vals = np.asarray(vals, dtype=float)
             vals = vals[np.isfinite(vals)]
             if vals.size == 0:

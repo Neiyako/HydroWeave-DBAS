@@ -12,6 +12,9 @@ variables:
   - 2m_temperature
 years: ["2024"]
 months: ["01", "02"]
-area: [30, 110, 40, 120]        # [北, 西, 南, 东]，中国东部小区域
+area: [40, 110, 30, 120]        # [北, 西, 南, 东]，必须北>南，中国东部小区域
 target_dir: data/downloads      # 下载根目录（同时注册为数据卷）
 volume_id: downloads            # 下载文件登记到 catalog 的卷 ID
+extra_request:
+  time: ["00:00"]               # 月平均数据只有 00:00 一个时次，缺省会被 MARS 判为无数据
+  data_format: netcdf           # 新 CDS API 需显式指定，默认是 grib

@@ -46,6 +46,47 @@ def make_nc(path, *, n_time=4, n_lat=3, n_lon=3, var_name="t2m",
     return path
 
 
+def make_layered_nc(path, *, n_time=4, n_level=3, n_lat=5, n_lon=6,
+                    var_name="t", units="K", time_values=None,
+                    tail_constant=False, negative=False, base=280.0):
+    """带 time/level/lat/lon 的合成文件，用于画像与 QC 测试。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ds = netCDF4.Dataset(path, "w")
+    ds.Conventions = "CF-1.8"
+    ds.createDimension("time", n_time)
+    ds.createDimension("level", n_level)
+    ds.createDimension("latitude", n_lat)
+    ds.createDimension("longitude", n_lon)
+    t = ds.createVariable("time", "i4", ("time",))
+    t.units = "hours since 2024-01-01 00:00:00"
+    t.calendar = "standard"
+    t[:] = (np.arange(n_time) * 6 if time_values is None
+            else np.asarray(time_values))
+    lev = ds.createVariable("level", "i4", ("level",))
+    lev.units = "millibars"
+    lev[:] = np.linspace(1000, 500, n_level).astype(np.int32)
+    lat = ds.createVariable("latitude", "f4", ("latitude",))
+    lat.units = "degrees_north"
+    lat[:] = np.linspace(30, 29, n_lat)
+    lon = ds.createVariable("longitude", "f4", ("longitude",))
+    lon.units = "degrees_east"
+    lon[:] = np.linspace(110, 111, n_lon)
+    v = ds.createVariable(var_name, "f4",
+                          ("time", "level", "latitude", "longitude"),
+                          fill_value=np.float32(9.96921e36))
+    v.units = units
+    v.standard_name = "air_temperature" if var_name == "t" else var_name
+    data = (base + np.arange(n_time * n_level * n_lat * n_lon)
+            .reshape(n_time, n_level, n_lat, n_lon) * 0.01).astype(np.float32)
+    if tail_constant:
+        data[-1, :, :, :] = np.float32(300.0)
+    if negative:
+        data[0, 0, 0, 0] = np.float32(-0.001)
+    v[:] = data
+    ds.close()
+    return path
+
+
 def make_volume(root, files=3, corrupt_one=False):
     """生成一个含若干 .nc 的合成数据卷目录。corrupt_one 时附加一个坏文件。"""
     paths = []

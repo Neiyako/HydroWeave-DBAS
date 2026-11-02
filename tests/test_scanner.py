@@ -19,6 +19,27 @@ def test_inventory_counts_and_registers(cat, volume_dir):
     assert cat.count_files(volume_id="v1") == 4
 
 
+def test_inventory_all_files_keeps_non_netcdf_catalog_only(cat, volume_dir):
+    """全量清单化：非 netCDF 登记为 not_netcdf 条目，不入解析队列。"""
+    (volume_dir / "DATA").mkdir()
+    (volume_dir / "DATA" / "readme.txt").write_text("x")
+    (volume_dir / "DATA" / "field.tif").write_bytes(b"II*\x00")
+    junk = volume_dir / "$RECYCLE.BIN"
+    junk.mkdir()
+    (junk / "ghost.nc").write_bytes(b"NOT A NETCDF FILE")
+
+    cat.register_volume("v1", volume_dir)
+    stats = scan_inventory(cat, "v1", ["*"], enqueue_metadata=True,
+                           netcdf_extensions=[".nc"],
+                           exclude_dirs=["$RECYCLE.BIN"])
+    assert stats.seen == 6                       # 4 个 .nc + txt + tif，回收站剪枝
+    catalog_only = list(cat.iter_files(volume_id="v1", parse_status="not_netcdf"))
+    assert {f["format"] for f in catalog_only} == {"txt", "tif"}
+    queued = [t["dedup_key"] for t in cat.list_tasks(status="pending", limit=50)]
+    assert len(queued) == 4                      # 只有 netCDF 入队
+    assert all(not k.endswith((".txt", ".tif")) for k in queued)
+
+
 def test_inventory_missing_pending_only_after_complete_walk(cat, volume_dir):
     cat.register_volume("v1", volume_dir)
     scan_inventory(cat, "v1", [".nc"])
@@ -28,6 +49,14 @@ def test_inventory_missing_pending_only_after_complete_walk(cat, volume_dir):
     assert stats.missing_pending == 1
     assert cat.count_files(volume_id="v1", status="missing_pending") == 1
     assert cat.count_files(volume_id="v1", status="active") == 3
+
+
+def test_inventory_does_not_touch_known_non_netcdf_rows(cat, volume_dir):
+    cat.register_volume("v1", volume_dir)
+    cat.upsert_file("v1", "notes.txt", 10, 1.0)   # 其他工具写入的普通文件
+    scan_inventory(cat, "v1", [".nc"])
+    row = cat.get_file(make_file_id("v1", "notes.txt"))
+    assert row["status"] == "active"
 
 
 def test_metadata_parse_extracts_expected_fields(cat, volume_dir):

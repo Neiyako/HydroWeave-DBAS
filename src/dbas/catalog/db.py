@@ -13,7 +13,7 @@ from pathlib import Path
 
 from dbas.core.exceptions import CatalogError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS: list[tuple[int, str]] = [
     (1, """
@@ -143,6 +143,80 @@ CREATE TABLE IF NOT EXISTS quality_reports (
     needs_human INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
 );
+"""),
+    (2, """
+CREATE TABLE IF NOT EXISTS datasets (
+    dataset_id  TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    description TEXT,
+    source      TEXT,
+    created_at  TEXT NOT NULL
+);
+INSERT OR IGNORE INTO datasets(dataset_id, label, description, source, created_at) VALUES
+ ('era5_pressure', 'ERA5 0.25° 气压层日文件',
+  't/q/u/v 四个气压层变量，37 层，逐小时，按日分文件', 'ERA5 / CDS', datetime('now')),
+ ('modis_air_quality', 'MODIS 经纬度网格大气成分产品',
+  'CO/NO2/O3/PM1/PM2.5/PM10/SO2 等网格产品', 'MODIS / ECHAP', datetime('now')),
+ ('eraint_wind', 'ERA-Interim 10m 风场',
+  'u10/v10/si10 全球网格', 'ERA-Interim', datetime('now')),
+ ('unknown', '未识别数据集', '未匹配到内置识别规则的数据集', '', datetime('now'));
+
+ALTER TABLE files ADD COLUMN dataset_id TEXT REFERENCES datasets(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_files_dataset ON files(dataset_id);
+
+ALTER TABLE variables ADD COLUMN scale_factor REAL;
+ALTER TABLE variables ADD COLUMN add_offset REAL;
+ALTER TABLE quality_reports ADD COLUMN dataset_id TEXT;
+ALTER TABLE quality_reports ADD COLUMN volume_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_qr_target ON quality_reports(target);
+CREATE INDEX IF NOT EXISTS idx_qr_dataset ON quality_reports(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_qr_volume ON quality_reports(volume_id);
+
+CREATE TABLE IF NOT EXISTS file_profiles (
+    file_id       TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
+    dataset_id    TEXT,
+    profiled_at   TEXT NOT NULL,
+    format        TEXT,
+    size_bytes    INTEGER,
+    expected_bytes INTEGER,                 -- nc3 可按维度/类型推算，用于截断检测
+    n_vars        INTEGER,
+    time_n        INTEGER,
+    time_min      TEXT,
+    time_max      TEXT,
+    time_units    TEXT,
+    time_calendar TEXT,
+    time_non_increasing INTEGER NOT NULL DEFAULT 0,
+    time_zero_count     INTEGER NOT NULL DEFAULT 0,
+    lat_sig       TEXT,
+    lon_sig       TEXT,
+    level_sig     TEXT,
+    lat_min REAL, lat_max REAL, lon_min REAL, lon_max REAL,
+    level_n INTEGER, level_min REAL, level_max REAL,
+    tail_suspect  INTEGER NOT NULL DEFAULT 0, -- 末时次为常数而首时次不是
+    warnings_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_file_profiles_dataset ON file_profiles(dataset_id);
+
+CREATE TABLE IF NOT EXISTS variable_profiles (
+    file_id      TEXT NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
+    var_name     TEXT NOT NULL,
+    units        TEXT,
+    dtype        TEXT,
+    scale_factor REAL,
+    add_offset   REAL,
+    n_total      INTEGER,
+    n_samples    INTEGER,
+    n_masked     INTEGER,
+    min_value    REAL,
+    max_value    REAL,
+    mean_value   REAL,
+    std_value    REAL,
+    negative_count INTEGER NOT NULL DEFAULT 0,
+    constant_field INTEGER NOT NULL DEFAULT 0,
+    tail_constant  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (file_id, var_name)
+);
+CREATE INDEX IF NOT EXISTS idx_var_profiles_name ON variable_profiles(var_name);
 """),
 ]
 

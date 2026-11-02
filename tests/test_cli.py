@@ -81,6 +81,42 @@ def test_budget_interrupt_and_resume(project, capsys):
     assert "queue_empty" in out or "成功" in out
 
 
+def test_profile_and_qc_cli(tmp_path, capsys):
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "configs").mkdir()
+    (root / "configs" / "system.yaml").write_text(
+        "profile:\n  budget_s: 30\n  batch_size: 2\n", encoding="utf-8")
+    vol = tmp_path / "diskE"
+    from tests.conftest import make_layered_nc
+    make_layered_nc(vol / "2010/ERA5_025dg_20100501_temperature.nc")
+    make_layered_nc(vol / "2010/ERA5_025dg_20100502_temperature.nc",
+                    tail_constant=True)
+
+    assert run(root, "volume", "register", str(vol), "--id", "era5vol") == 0
+    assert run(root, "scan", "--volume", "era5vol", "--mode", "inventory",
+               "--enqueue-metadata") == 0
+    assert run(root, "scan", "--volume", "era5vol", "--mode", "metadata") == 0
+    capsys.readouterr()
+
+    assert run(root, "dataset", "list") == 0
+    out = capsys.readouterr().out
+    assert "era5_pressure" in out
+
+    assert run(root, "profile", "--volume", "era5vol", "--limit", "2",
+               "--batch-size", "2") == 0
+    out = capsys.readouterr().out
+    assert "报告:" in out
+    reports = list((root / "data" / "reports").glob("profile_qc_*.md"))
+    assert len(reports) == 1
+    text = reports[0].read_text(encoding="utf-8")
+    assert "era5_pressure" in text
+    assert "R002_TAIL_CONSTANT" in text
+
+    assert run(root, "qc", "report", "--volume", "era5vol") == 0
+    assert len(list((root / "data" / "reports").glob("profile_qc_*.md"))) == 2
+
+
 def test_volume_offline_not_destructive(project, tmp_path, capsys):
     """硬盘拔出后扫描给出明确错误，索引不丢失。"""
     root, vol = project

@@ -35,3 +35,11 @@ class TaskError(DbasError):
 
 class FetchError(DbasError):
     """ERA5 下载错误。"""
+
+
+class AnalysisError(DbasError):
+    """分析配置或区域定义错误。"""
+
+
+class SubsetError(AnalysisError):
+    """区域裁切执行错误。"""

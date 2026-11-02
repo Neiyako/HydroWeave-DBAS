@@ -18,7 +18,7 @@ product_type: monthly_averaged_reanalysis
 variables: [2m_temperature]
 years: ["2024"]
 months: ["01", "02"]
-area: [30, 110, 40, 120]
+area: [40, 110, 30, 120]
 target_dir: downloads
 volume_id: downloads
 """
@@ -37,7 +37,7 @@ def test_fetch_config_builds_requests(fcfg):
     r = reqs[0]["request"]
     assert r["year"] == "2024" and r["month"] == "01"
     assert r["variable"] == ["2m_temperature"]
-    assert r["area"] == [30, 110, 40, 120]
+    assert r["area"] == [40, 110, 30, 120]
 
 
 def test_fetch_config_requires_fields(tmp_path):
@@ -46,6 +46,21 @@ def test_fetch_config_requires_fields(tmp_path):
     from dbas.core.exceptions import ConfigError
     with pytest.raises(ConfigError):
         FetchConfig.from_yaml(bad)
+
+
+@pytest.mark.parametrize("area,msg", [
+    ([30, 110, 40, 120], "北(30.0) ≤ 南"),      # 真实踩过的坑：盒子反了
+    ([40, 110], "四个值"),
+])
+def test_fetch_config_rejects_bad_area(tmp_path, area, msg):
+    """反向 area 会让 MARS 返回空数据，必须在入队前拦住。"""
+    from dbas.core.exceptions import ConfigError
+    p = tmp_path / "a.yaml"
+    p.write_text(FETCH_YAML.replace("[40, 110, 30, 120]", str(area)),
+                 encoding="utf-8")
+    with pytest.raises(ConfigError) as ei:
+        FetchConfig.from_yaml(p)
+    assert msg in str(ei.value)
 
 
 def test_enqueue_dedup(cat, fcfg, tmp_path):

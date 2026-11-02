@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 fetch = ["cdsapi>=0.7"]
-eda = ["xarray>=2024.1", "matplotlib>=3.8"]
+eda = ["xarray>=2024.1", "matplotlib>=3.8", "dask[array]>=2024.1", "flox>=0.9"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

@@ -31,6 +31,10 @@ DEFAULTS: dict[str, Any] = {
         "batch_size": 20,
         "budget_s": 60,
         "nc_extensions": [".nc", ".nc4", ".cdf"],
+        # inventory 收录范围；["*"] 为全量清单化（非 netCDF 只登记不解析）
+        "inventory_extensions": [".nc", ".nc4", ".cdf"],
+        # 按目录名剪枝（Windows 卷回收站/系统索引等噪声）
+        "exclude_dirs": [],
     },
     "scheduler": {
         "max_attempts": 3,
@@ -39,9 +43,23 @@ DEFAULTS: dict[str, Any] = {
         "heartbeat_s": 10,
     },
     "resource": {
-        # 水位阈值是“尽量早停”的保护，不是绝对安全线（见 docs/data-safety.md）
+        # 水位阈值是“尽量早停”的保护，不是绝对安全线（见 docs/operations.md）
         "max_rss_mb": 3072,          # 进程 RSS 警戒线（8GB 机器保守值）
         "min_available_mb": 1024,    # 系统可用内存警戒线
+    },
+    "profile": {
+        "batch_size": 20,
+        "budget_s": 120,
+    },
+    "analysis": {
+        "output_dir": "data/analysis",   # ARD 产物卷根目录
+        "volume_id": "analysis",         # 产物登记进 catalog 的卷 ID
+        "region": "qhp_main",            # 默认研究区域（见 analysis/regions.py）
+        "complevel": 4,                  # 输出 zlib 压缩级别
+        "time_chunk": 31,                # 输出文件时间维分块上限
+        "chunk_mb": 32,                  # dask 惰性读取的目标块大小（8GB 机器保守值）
+        "budget_s": 600,
+        "batch_size": 5,
     },
     "log_level": "INFO",
     "reports": {"dir": "data/reports"},
@@ -84,6 +102,11 @@ class Config:
     def tmp_dir(self) -> Path:
         return self._path(self.data.get("tmp", {}).get(
             "dir", DEFAULTS["tmp"]["dir"]))
+
+    @property
+    def analysis_dir(self) -> Path:
+        return self._path(self.data.get("analysis", {}).get(
+            "output_dir", DEFAULTS["analysis"]["output_dir"]))
 
     def section(self, name: str) -> dict[str, Any]:
         merged = dict(DEFAULTS.get(name, {}))

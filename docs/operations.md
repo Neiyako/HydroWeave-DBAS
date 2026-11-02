@@ -44,7 +44,56 @@
 - 重建：`db backup` → 移走 `data/catalog.db` → 重新注册卷并扫描。
   原始数据不受影响；唯一损失是任务历史，文件索引由原始文件重建。
 
+## 内容画像与 QC
+
+- 先小批量试跑：`python -m dbas profile --volume <卷> --limit 20`。
+  画像会抽样读首/末时次，不读完整文件；budget/batch 与扫描一致，可断点续跑。
+- 全量画像：`python -m dbas profile --volume <卷> --batch-size 500 --budget 900`，
+  重复执行直到 `tasks list --status pending` 为空；已完成文件的 dedup 会自动跳过。
+- `dataset list` 查看数据集分组与画像进度；`dataset assign --volume <卷>`
+  只做分组，不读数据。
+- `qc report --volume <卷>` 只从 catalog 生成 Markdown，不重读原始文件。
+- 现有规则覆盖：文件截断/尾部未写入、时间轴非单调、fill/缺测比例、
+  物理范围、负比湿、未声明的 -999 缺测哨兵、常数场、轴缺失、数据集覆盖率。
+- 画像统计是抽样结果，不能替代单格/全量精确分析；规则命中会写入
+  `quality_reports`，带证据 JSON 与 `needs_human` 标记，原始数据永远不被修改。
+
 ## 已声明的未实现项
 
-QC、EDA、清洗、特征工程命令尚未提供（避免「看起来有」的假接口）；
+EDA、清洗、特征工程命令尚未提供；QC 目前是首版规则集，人工复核流程和
+更多物理一致性规则（如探空/再分析交叉检验）尚未实现。
 CDS 服务器排队时间不可控，fetch 不设硬超时，中断后重跑即可。
+
+## 数据盘：`era5hd` = /Volumes/Untitled
+
+1TB USB 移动盘，单分区 NTFS（Apple FSKit 驱动挂载为**只读**）。
+容量 785GB 已用 / 215GB 空闲；59,503 个文件已全量入册。
+
+| 盘上位置 | 内容 | 文件数 | 体量 | catalog 处理 |
+|---|---|---|---|---|
+| `2010/`–`2013/` | ERA5 0.25° 逐日单变量 NetCDF（每年 5–10 月 × t/q/u/v，命名 `ERA5_025dg_YYYYMMDD_<var>.nc`） | 2,944 | 689GB | 已解析元数据；dataset=`era5_pressure` |
+| `DATA/` | 专题数据集混装：MODIS 大气成分、ERA-Interim、冰川/湖泊/积雪数据集、WPS-WRF 输出、shp 矢量、中文命名的下载包 | 56,559 | 37.7GB | 全量清单化，标记 `not_netcdf`（可检索、不解析头） |
+
+约定与注意：
+
+- **盘保持只读**：DBAS 不写原始卷，catalog 与产物都留在 Mac 侧 `data/`。
+  SQLite 不要放到 NTFS/FUSE 卷上——跨平台文件锁不可靠，掉电易损坏索引。
+- **索引不随盘走**：换机器/重装后需 `volume register /Volumes/Untitled --id era5hd`
+  （ID 不变则 rel_path 键全部复用）+ 重跑 inventory；`data/backups/` 里的
+  `catalog_*.db` 是索引备份，恢复用 `cp` 覆盖 `data/catalog.db` 即可。
+- **启动用 `./bin/dbas`**，不要用 `.venv/bin/python -m dbas`：editable 安装依赖
+  site-packages 里的 `.pth`，而 iCloud/同步代理会把 `.pth` 打上 macOS `hidden`
+  标志位，`site.py` 直接跳过它 → `No module named dbas`。启动器改用
+  `PYTHONPATH=src`，与该标志位无关。
+- **全量清单化**开关在 `configs/system.yaml`：`scan.inventory_extensions: ["*"]`
+  收录所有文件；`scan.nc_extensions` 仍只决定哪些进元数据解析队列。
+  `scan.exclude_dirs` 剪掉 `$RECYCLE.BIN`、`System Volume Information` 等卷级噪声
+  （盘在 Windows 上用过，这两个目录必然存在）。
+- 日常增量：新拷文件后跑 `./bin/dbas scan --volume era5hd --mode incremental`，
+  它只把新增/变化的文件入队解析。
+- 报告：`./bin/dbas report inventory`。
+- **尚未做**：689GB ERA5 的 sha256 基线（`checksum` 只跑过 5 个样本）。只读档案
+  的唯一比特级保障就是校验和，建议低峰期分批跑 `--batch-size 5 --budget 600`
+  反复执行；在这之前，盘上数据出现静默损坏是无法察觉的。
+- 数据集自动识别（`dataset assign`）当前只覆盖 netCDF，`DATA/` 里 4 万余个
+  `.gz`/`.tif` 等条目 `dataset_id` 仍为空，`dataset list` 因此低报盘的构成。

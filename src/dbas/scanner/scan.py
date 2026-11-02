@@ -38,20 +38,28 @@ class ScanStats:
         return time.time() - self.started
 
 
-def _iter_netcdf_files(root: Path, extensions: list[str]):
-    """流式遍历目录树，产出 (rel_path, full_path, st)。"""
+def _iter_files(root: Path, extensions: list[str],
+                exclude_dirs: list[str] = ()):
+    """流式遍历目录树，产出 (rel_path, full_path, st)。
+
+    extensions 含 "*" 时收录全部文件；exclude_dirs 按目录名剪枝。
+    """
     exts = {e.lower() for e in extensions}
+    take_all = "*" in exts
+    skip_dirs = set(exclude_dirs)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames.sort()
+        dirnames[:] = sorted(d for d in dirnames if d not in skip_dirs)
         for fn in sorted(filenames):
-            if Path(fn).suffix.lower() in exts:
-                full = Path(dirpath) / fn
-                try:
-                    st = full.stat()
-                except OSError as e:
-                    log.warning("无法 stat %s: %s", full, e)
-                    continue
-                yield full.relative_to(root).as_posix(), full, st
+            suffix = Path(fn).suffix.lower()
+            if not take_all and suffix not in exts:
+                continue
+            full = Path(dirpath) / fn
+            try:
+                st = full.stat()
+            except OSError as e:
+                log.warning("无法 stat %s: %s", full, e)
+                continue
+            yield full.relative_to(root).as_posix(), full, st
 
 
 # --------------------------------------------------------------------------
@@ -60,16 +68,25 @@ def _iter_netcdf_files(root: Path, extensions: list[str]):
 
 def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
                    *, enqueue_metadata: bool = False,
-                   incremental: bool = False) -> ScanStats:
-    """盘点卷内 NetCDF 文件。incremental=True 时只把新增/变化的文件送去解析。
+                   incremental: bool = False,
+                   netcdf_extensions: list[str] | None = None,
+                   exclude_dirs: list[str] = ()) -> ScanStats:
+    """盘点卷内文件。incremental=True 时只把新增/变化的文件送去解析。
+
+    extensions 可为 "*"（全量清单化）；此时只有后缀落在 netcdf_extensions 内的
+    文件才会入队解析，其余标记为 not_netcdf 并记录 format=后缀，作为可检索的
+    清单条目而非解析积压。
 
     missing_pending 语义：只有在「卷确认在线 + walk 完整跑完无异常」时才会
     把本次未发现的既有文件标记为待确认缺失；任何中断都不会触发该标记。
     """
     root = catalog.resolve_volume_root(volume_id)
+    exts = {e.lower() for e in extensions}
+    take_all = "*" in exts
+    nc_exts = {e.lower() for e in (netcdf_extensions or extensions)}
     stats = ScanStats()
     seen_rel_paths: set[str] = set()
-    for rel, full, st in _iter_netcdf_files(root, extensions):
+    for rel, full, st in _iter_files(root, extensions, exclude_dirs):
         seen_rel_paths.add(rel)
         stats.seen += 1
         file_id, changed = catalog.upsert_file(
@@ -80,6 +97,10 @@ def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
             continue
         if changed:
             stats.new += 1
+        if Path(rel).suffix.lower() not in nc_exts:
+            catalog.mark_not_netcdf(file_id, Path(rel).suffix.lstrip(".").lower()
+                                    or "no_extension")
+            continue
         if enqueue_metadata and changed:
             catalog.enqueue_task(
                 "scan_metadata",
@@ -88,7 +109,9 @@ def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
                 dedup_key=f"scan_metadata:{file_id}:{st.st_mtime:.6f}")
     # walk 完整结束才允许标记缺失
     if not incremental:
-        known = {f["rel_path"] for f in catalog.iter_files(volume_id=volume_id)}
+        # 全量清单模式纳入所有已知文件；普通模式只纳入本次扫描负责的扩展名
+        known = {f["rel_path"] for f in catalog.iter_files(volume_id=volume_id)
+                 if take_all or Path(f["rel_path"]).suffix.lower() in exts}
         missing = list(known - seen_rel_paths)
         stats.missing_pending = catalog.mark_missing_pending(volume_id, missing)
         if missing:

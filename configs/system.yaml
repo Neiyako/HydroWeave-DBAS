@@ -10,15 +10,26 @@
 scan:
   batch_size: 20        # 每批最大文件数
   budget_s: 60          # 单次运行时间预算（秒）
-  nc_extensions: [".nc", ".nc4", ".cdf"]
+  nc_extensions: [".nc", ".nc4", ".cdf"]   # 只有这些后缀进元数据解析队列
+  # 盘级全量清单：收录卷内每一个文件，非 netCDF 记为 not_netcdf 条目（可检索、不解析）
+  inventory_extensions: ["*"]
+  exclude_dirs:                         # 按目录名剪枝的噪声
+    - "$RECYCLE.BIN"
+    - "System Volume Information"
+    - ".Trashes"
+    - ".fseventsd"
 
 scheduler:
   max_attempts: 3
   retry_delay_s: 5
   stale_running_s: 600
 
+profile:
+  batch_size: 20        # 内容画像单次最多文件数
+  budget_s: 120         # 内容画像单次时间预算（秒）
+
 resource:
-  # 注意：这是软警戒线而非绝对安全保证，见 docs/data-safety.md
+  # 注意：这是软警戒线而非绝对安全保证，见 docs/operations.md
   max_rss_mb: 3072
   min_available_mb: 1024
 

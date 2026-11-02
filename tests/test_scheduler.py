@@ -126,6 +126,31 @@ def test_stale_running_task_reclaimed(tmp_path):
     assert s.succeeded == 1
 
 
+def test_cancel_task_removes_from_schedule(tmp_path):
+    """取消的任务不再被认领（用于废弃参数写错的历史任务）。"""
+    cat = _mk_cat(tmp_path)
+    tid, _ = cat.enqueue_task("t", {}, dedup_key="k")
+    assert cat.cancel_task(tid) is True
+    assert cat.claim_task("w1") is None
+    assert cat.get_task(tid)["status"] == "cancelled"
+    # 已成功的不允许取消（保留结果审计）
+    tid2, _ = cat.enqueue_task("t", {}, dedup_key="k2")
+    cat.finish_task(tid2, "succeeded")
+    assert cat.cancel_task(tid2) is False
+
+
+def test_cancel_task_frees_dedup_key_for_reenqueue(tmp_path):
+    """取消后必须能重新入队：否则修正参数后会被 UNIQUE 约束永久挡住。"""
+    cat = _mk_cat(tmp_path)
+    tid, created = cat.enqueue_task("download", {"area": [30, 110, 40, 120]}, dedup_key="d1")
+    assert created is True
+    assert cat.cancel_task(tid) is True
+    tid2, created2 = cat.enqueue_task("download", {"area": [40, 110, 30, 120]}, dedup_key="d1")
+    assert created2 is True
+    assert tid2 != tid
+    assert cat.get_task(tid2)["status"] == "pending"
+
+
 def test_claim_is_atomic_no_double_execution(tmp_path):
     cat = _mk_cat(tmp_path)
     cat.enqueue_task("t", {}, dedup_key="k")

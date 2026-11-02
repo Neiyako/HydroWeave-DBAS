@@ -115,6 +115,55 @@ class Catalog:
         self.mark_volume(volume_id, VOLUME_OFFLINE)
         raise VolumeOffline(volume_id)
 
+    # -- 数据集 -------------------------------------------------------------
+    def ensure_dataset(self, dataset_id: str, label: str, description: str = "",
+                       source: str = "") -> None:
+        with self.conn:
+            self.conn.execute(
+                """INSERT INTO datasets(dataset_id, label, description, source,
+                     created_at) VALUES (?,?,?,?,?)
+                   ON CONFLICT(dataset_id) DO UPDATE SET
+                     label=excluded.label,
+                     description=excluded.description,
+                     source=excluded.source""",
+                (dataset_id, label, description, source, _now()))
+
+    def set_file_dataset(self, file_id: str, dataset_id: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE files SET dataset_id=? WHERE file_id=?",
+                (dataset_id, file_id))
+
+    def list_datasets(self) -> list[dict[str, Any]]:
+        cur = self.conn.execute(
+            """SELECT d.dataset_id, d.label, d.description, d.source,
+                      COUNT(DISTINCT f.file_id) AS files,
+                      COALESCE(SUM(CASE WHEN f.parse_status='parsed'
+                                        THEN 1 ELSE 0 END), 0) AS parsed,
+                      COALESCE(SUM(CASE WHEN p.file_id IS NOT NULL
+                                        THEN 1 ELSE 0 END), 0) AS profiled,
+                      COALESCE(SUM(CASE WHEN lower(f.rel_path) LIKE '%.nc'
+                                          OR lower(f.rel_path) LIKE '%.nc4'
+                                          OR lower(f.rel_path) LIKE '%.cdf'
+                                        THEN 1 ELSE 0 END), 0) AS nc_files,
+                      MIN(f.time_min) AS time_min,
+                      MAX(f.time_max) AS time_max,
+                      COALESCE(SUM(f.size_bytes), 0) AS size_bytes
+               FROM datasets d
+               LEFT JOIN files f
+                 ON f.dataset_id=d.dataset_id AND f.status='active'
+               LEFT JOIN file_profiles p ON p.file_id=f.file_id
+               GROUP BY d.dataset_id
+               ORDER BY d.dataset_id""")
+        return [_d(r) for r in cur.fetchall()]
+
+    def dataset_ids_for_volume(self, volume_id: str) -> list[str]:
+        rows = self.conn.execute(
+            """SELECT DISTINCT dataset_id FROM files
+               WHERE volume_id=? AND dataset_id IS NOT NULL
+               ORDER BY dataset_id""", (volume_id,)).fetchall()
+        return [r[0] for r in rows]
+
     # -- 文件 ---------------------------------------------------------------
     def upsert_file(self, volume_id: str, rel_path: str, size_bytes: int,
                     mtime: float) -> tuple[str, bool]:
@@ -232,11 +281,12 @@ class Catalog:
                 self.conn.execute(
                     """INSERT OR REPLACE INTO variables
                        (file_id, name, dims, dtype, units, standard_name,
-                        long_name, fill_value)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                        long_name, fill_value, scale_factor, add_offset)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (file_id, v.get("name"), v.get("dims"), v.get("dtype"),
                      v.get("units"), v.get("standard_name"),
-                     v.get("long_name"), v.get("fill_value")))
+                     v.get("long_name"), v.get("fill_value"),
+                     v.get("scale_factor"), v.get("add_offset")))
             self.conn.execute("DELETE FROM dimensions WHERE file_id=?", (file_id,))
             for d in dimensions:
                 self.conn.execute(
@@ -249,6 +299,14 @@ class Catalog:
                 """UPDATE files SET parse_status='failed', parse_error=?,
                    format=COALESCE(?, format) WHERE file_id=?""",
                 (error[:500], fmt, file_id))
+
+    def mark_not_netcdf(self, file_id: str, fmt: str) -> None:
+        """全量清单化下，非 netCDF 文件只登记清单，不进解析队列。"""
+        with self.conn:
+            self.conn.execute(
+                """UPDATE files SET parse_status='not_netcdf', format=?
+                   WHERE file_id=? AND parse_status='unparsed'""",
+                (fmt, file_id))
 
     def set_fingerprint(self, file_id: str, algo: str, digest: str) -> None:
         with self.conn:
@@ -298,6 +356,104 @@ class Catalog:
         cur = self.conn.execute(
             "SELECT * FROM scan_runs ORDER BY started_at DESC LIMIT ?", (limit,))
         return [_d(r) for r in cur.fetchall()]
+
+    # -- 内容画像与质量报告 -----------------------------------------------------
+    def save_profile(self, file_profile: dict[str, Any],
+                     variable_profiles: list[dict[str, Any]],
+                     findings: list[dict[str, Any]], *, target: str) -> None:
+        """整体替换一个文件的内容画像与 QC 发现（幂等重跑）。"""
+        fp = dict(file_profile)
+        fp.setdefault("profiled_at", _now())
+        fid = fp["file_id"]
+        with self.conn:
+            self.conn.execute("DELETE FROM file_profiles WHERE file_id=?", (fid,))
+            self.conn.execute("DELETE FROM variable_profiles WHERE file_id=?", (fid,))
+            self.conn.execute("DELETE FROM quality_reports WHERE target=?", (target,))
+            self.conn.execute(
+                """INSERT INTO file_profiles(file_id, dataset_id, profiled_at,
+                     format, size_bytes, expected_bytes, n_vars, time_n,
+                     time_min, time_max, time_units, time_calendar,
+                     time_non_increasing, time_zero_count,
+                     lat_sig, lon_sig, level_sig,
+                     lat_min, lat_max, lon_min, lon_max,
+                     level_n, level_min, level_max, tail_suspect, warnings_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (fp["file_id"], fp.get("dataset_id"), fp["profiled_at"],
+                 fp.get("format"), fp.get("size_bytes"), fp.get("expected_bytes"),
+                 fp.get("n_vars"), fp.get("time_n"), fp.get("time_min"),
+                 fp.get("time_max"), fp.get("time_units"),
+                 fp.get("time_calendar"),
+                 int(fp.get("time_non_increasing") or 0),
+                 int(fp.get("time_zero_count") or 0),
+                 fp.get("lat_sig"), fp.get("lon_sig"), fp.get("level_sig"),
+                 fp.get("lat_min"), fp.get("lat_max"),
+                 fp.get("lon_min"), fp.get("lon_max"),
+                 fp.get("level_n"), fp.get("level_min"), fp.get("level_max"),
+                 int(bool(fp.get("tail_suspect"))),
+                 fp.get("warnings_json")))
+            for vp in variable_profiles:
+                self.conn.execute(
+                    """INSERT OR REPLACE INTO variable_profiles(
+                         file_id, var_name, units, dtype, scale_factor, add_offset,
+                         n_total, n_samples, n_masked, min_value, max_value,
+                         mean_value, std_value, negative_count, constant_field,
+                         tail_constant)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (fid, vp.get("var_name"), vp.get("units"), vp.get("dtype"),
+                     vp.get("scale_factor"), vp.get("add_offset"),
+                     vp.get("n_total"), vp.get("n_samples"), vp.get("n_masked"),
+                     vp.get("min_value"), vp.get("max_value"),
+                     vp.get("mean_value"), vp.get("std_value"),
+                     int(vp.get("negative_count") or 0),
+                     int(bool(vp.get("constant_field"))),
+                     int(bool(vp.get("tail_constant")))))
+            self._insert_findings(findings)
+
+    def replace_quality_reports(self, target: str,
+                                findings: list[dict[str, Any]]) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM quality_reports WHERE target=?",
+                              (target,))
+            self._insert_findings(findings)
+
+    def _insert_findings(self, findings: list[dict[str, Any]]) -> None:
+        now = _now()
+        for f in findings:
+            self.conn.execute(
+                """INSERT INTO quality_reports(report_id, target, level, rule_id,
+                     severity, evidence_json, needs_human, created_at,
+                     dataset_id, volume_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (uuid.uuid4().hex[:12], f["target"], f["level"], f["rule_id"],
+                 f["severity"],
+                 json.dumps(f.get("evidence") or {}, ensure_ascii=False),
+                 int(bool(f.get("needs_human"))), f.get("created_at") or now,
+                 f.get("dataset_id"), f.get("volume_id")))
+
+    def list_quality_reports(self, *, dataset_id: str | None = None,
+                             volume_id: str | None = None,
+                             target: str | None = None,
+                             severity: str | None = None,
+                             limit: int = 500) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM quality_reports WHERE 1=1"
+        args: list[Any] = []
+        if dataset_id:
+            sql += " AND dataset_id=?"
+            args.append(dataset_id)
+        if volume_id:
+            # 数据集级发现没有单一卷归属，按卷查看时一并保留
+            sql += " AND (volume_id=? OR volume_id IS NULL)"
+            args.append(volume_id)
+        if target:
+            sql += " AND target=?"
+            args.append(target)
+        if severity:
+            sql += " AND severity=?"
+            args.append(severity)
+        sql += (" ORDER BY CASE severity WHEN 'error' THEN 0"
+                " WHEN 'warn' THEN 1 ELSE 2 END, rule_id, target LIMIT ?")
+        args.append(limit)
+        return [_d(r) for r in self.conn.execute(sql, args).fetchall()]
 
     # -- 任务队列 --------------------------------------------------------------
     def enqueue_task(self, type_: str, params: dict[str, Any], *,
@@ -377,6 +533,18 @@ class Catalog:
                      error, json.dumps(attempt_stats or {}, ensure_ascii=False),
                      attempt_id))
 
+    def cancel_task(self, task_id: str) -> bool:
+        """取消未完成任务（用于废弃参数写错的历史任务；succeeded 不动）。
+        同时释放 dedup_key，否则正确参数的任务会被 UNIQUE 约束永久挡住。"""
+        with self.conn:
+            cur = self.conn.execute(
+                """UPDATE tasks SET status='cancelled', dedup_key=NULL,
+                       updated_at=?, claimed_by=NULL
+                   WHERE task_id=? AND status IN
+                   ('pending','running','retry_wait','failed','blocked')""",
+                (_now(), task_id))
+            return cur.rowcount == 1
+
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         row = self.conn.execute(
             "SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
@@ -443,7 +611,12 @@ class Catalog:
             "volumes": self.list_volumes(),
             "files_by_status": self._group_count("files", "status"),
             "files_by_parse": self._group_count("files", "parse_status"),
+            "files_by_dataset": self._group_count("files", "dataset_id"),
             "tasks_by_status": self.count_tasks_by_status(),
+            "profiled_files": self.conn.execute(
+                "SELECT COUNT(*) FROM file_profiles").fetchone()[0],
+            "quality_by_severity": self._group_count(
+                "quality_reports", "severity"),
             "recent_scan_runs": self.list_scan_runs(5),
         }
 

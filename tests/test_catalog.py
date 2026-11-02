@@ -9,14 +9,20 @@ from dbas.core.exceptions import CatalogError
 
 
 def test_migrate_creates_tables_and_is_idempotent(cat):
-    assert current_version(cat.conn) == 1
+    assert current_version(cat.conn) == 2
     tables = {r[0] for r in cat.conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     for t in ("volumes", "files", "variables", "dimensions", "scan_runs",
-              "tasks", "task_attempts", "artifacts", "schema_migrations"):
+              "tasks", "task_attempts", "artifacts", "schema_migrations",
+              "datasets", "file_profiles", "variable_profiles",
+              "quality_reports"):
         assert t in tables, f"缺少表 {t}"
+    # 内置数据集已播种
+    ids = {r[0] for r in cat.conn.execute("SELECT dataset_id FROM datasets")}
+    assert {"era5_pressure", "modis_air_quality", "eraint_wind",
+            "unknown"} <= ids
     # 重复迁移不报错、版本不变
-    assert migrate(cat.conn) == 1
+    assert migrate(cat.conn) == 2
 
 
 def test_register_volume_and_resolve_root(cat, tmp_path):

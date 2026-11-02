@@ -20,3 +20,6 @@ configs/local*.yaml
 
 # 系统文件
 .DS_Store
+
+# xkCode 本地会话/计划状态
+.zcode/

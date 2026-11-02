@@ -1,22 +1,68 @@
-# DBAS — ERA5 科研数据管理与分析系统
+# HydroWeave — DBAS 数据管理与分析系统
 
-DBAS（Data Management and Analysis System）面向个人科研工作流，提供 ERA5/NetCDF 数据的**数据卷登记、目录索引、元数据解析、任务调度、质量检查、区域裁切与 CDS 下载管理**。原始数据只读，运行状态与报告写入项目数据目录；任务支持分批、重试和断点续跑。
+DBAS（Data Management and Analysis System）面向个人科研工作流，管理 ERA5/NetCDF
+数据的完整生命周期：**数据卷登记 → 目录索引 → 元数据解析 → 质量检查 → 区域裁切
+→ CDS 下载管理 → 报告输出**。原始数据只读；所有运行状态写入项目内 `data/`；
+任务支持分批、预算控制、重试与断点续跑。
 
-> 当前版本：`0.1.0`。核心管理链路、CDS fetch、内容画像/QC 和 L1 subset 已实现；更高阶 EDA 与特征工程仍在迭代中。
+> 当前版本 `0.1.0`。核心管理链路、CDS fetch、内容画像/QC 和 L1 subset 已实现；
+> 更高阶 EDA 与特征工程仍在迭代中。
 
-## 能力概览
+算法层已拆分到独立仓库 [dbas-core](https://github.com/Neiyako/dbas-core)
+（包名 `dbas_core`），本仓库专注系统编排：卷管理、扫描调度、任务队列、下载
+管理与 CLI。两仓库通过 Git 依赖组合，可各自独立演进。
 
-- **目录管理**：以“卷 ID + 卷内相对路径”稳定定位文件，挂载路径变化不影响索引。
-- **扫描与解析**：先 inventory，再按任务队列解析 NetCDF 头；支持增量扫描、预算、批次和断点续跑。
-- **校验与运维**：文件可读性检查、流式 SHA-256、任务重试/清理、SQLite integrity check 与在线备份。
-- **数据集与 QC**：按路径规则识别数据集，生成内容画像，记录时间轴、fill 值、物理范围和文件级覆盖率等 QC 证据。
-- **区域裁切**：基于 xarray+dask 的惰性裁切；支持降序纬度、0–360 经度等常见 ERA5 轴约定，产物自动登记为 analysis 卷。
-- **CDS 下载**：小体量请求的 plan/enqueue/run 管理；临时 `.part` 文件完成后原子改名，避免留下半截文件。
-- **实验性分析**：`scripts/tp_cloud_water_eda.py` 和 `scripts/tp_cloud_water_plot.py` 提供青藏高原水汽/成云潜势代理指标分析。它们依赖具体数据命名、外部底图和本机目录，**不是真云水含量，也不是稳定 CLI**，请按脚本顶部说明调整后再使用。
+---
 
-## 安装
+## 一、系统能做什么
 
-需要 Python 3.10 或更高版本：
+| 能力 | 说明 | 主要命令 |
+|------|------|----------|
+| 目录管理 | 以「卷 ID + 卷内相对路径」稳定定位文件，移动硬盘换挂载点不影响索引 | `dbas volume register/list` |
+| 扫描与解析 | 先 inventory 盘点，再按任务队列解析 NetCDF 头（只读 header，不载入数据体）；支持增量扫描、预算、批次 | `dbas scan` |
+| 校验与运维 | 文件可读性检查、流式 SHA-256、任务清理、SQLite integrity check 与在线备份 | `dbas verify/checksum/db` |
+| 数据集与 QC | 按路径规则识别数据集，抽样画像，记录时间轴/fill 值/物理范围等 QC 证据 | `dbas dataset/profile/qc` |
+| 区域裁切 | xarray+dask 惰性裁切，支持降序纬度、0–360 经度等 ERA5 轴约定，产物自动登记为 analysis 卷 | `dbas subset` |
+| CDS 下载 | 小体量请求的 plan/enqueue/run 管链；`.part` 临时文件 + 原子改名 | `dbas fetch` |
+| 报告 | 生成 Markdown 盘点/校验报告到 `data/reports/` | `dbas report` |
+
+### 实际分析成果示例
+
+系统已用于青藏高原云水资源代理指标分析（2010–2013 年 5–10 月 ERA5 气压层
+t/q/u/v 数据，约 2TB 原始卷）。以下是真实产出的例图，由
+`scripts/tp_cloud_water_plot.py` 生成，算法口径见
+[dbas-core](https://github.com/Neiyako/dbas-core) 的 `cloud_water_proxy` 模块：
+
+**年际对比**——高原主体 PW（可降水量）、RH500（中层饱和度）、CFRAC（云发生
+频率代理）的四年夏季平均空间分布与差异：
+
+![年际对比](docs/img/fig_annual_comparison.png)
+
+**逐日时间序列**——高原平均 PW 与 RH500 的夏季演变，可看到季风推进阶段的
+水汽资源脉冲：
+
+![时间序列](docs/img/fig_timeseries.png)
+
+**沿 32°N 垂直剖面**——温度与相对湿度的纬度–气压分布，展示高原动力抬升
+对中层湿层结构的影响：
+
+![垂直剖面](docs/img/fig_crosssection.png)
+
+**冰川区高程分层**——RGI 6.0 冰川栅格（13/14/15 区）内 PW 随海拔的分布，
+用于讨论冰川补给区的水汽条件：
+
+![冰川高程](docs/img/fig_glacier_elevation.png)
+
+> 口径说明：本卷 ERA5 只有 t/q/u/v，没有云水混合比（clwc/ciwc）与总云量，
+> 上述 PW/RH500/CFRAC 都是**代理指标**，不是真云水含量。地形以下填层按
+> 「等值连段」法反推地面气压并掩膜，避免地下层水汽被误积分。完整口径见
+> `scripts/tp_cloud_water_eda.py` 模块注释。
+
+---
+
+## 二、安装
+
+需要 Python 3.10+。安装主包时会自动从 GitHub 拉取 `dbas-core` 算法库：
 
 ```bash
 python3 -m venv .venv
@@ -27,14 +73,11 @@ python3 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-按需安装可选依赖：
+可选依赖组：
 
 ```bash
-# CDS API 下载
-.venv/bin/python -m pip install -e '.[fetch]'
-
-# subset、内容画像和实验性 EDA
-.venv/bin/python -m pip install -e '.[eda]'
+.venv/bin/python -m pip install -e '.[fetch]'   # CDS API 下载
+.venv/bin/python -m pip install -e '.[eda]'     # subset / 画像 / 实验性 EDA
 ```
 
 安装后优先使用 console script：
@@ -43,7 +86,7 @@ python3 -m venv .venv
 dbas --help
 ```
 
-如果 macOS 同步工具导致 editable 安装的 `.pth` 被忽略，可使用不依赖 `.pth` 的备用入口：
+macOS 同步工具若导致 editable 安装的 `.pth` 失效，用备用入口：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m dbas --help
@@ -51,22 +94,24 @@ PYTHONPATH=src .venv/bin/python -m dbas --help
 ./bin/dbas --help
 ```
 
-`bin/dbas` 是本仓库的开发辅助启动器，默认使用项目内 `.venv`；在其他环境中请使用已安装的 `dbas` 命令。
+`bin/dbas` 是开发辅助启动器，默认使用项目内 `.venv`。
 
-## 30 秒体验：合成数据
+---
 
-以下命令只创建项目内的合成 NetCDF，不触碰真实 ERA5 数据，也不联网：
+## 三、快速上手
+
+### 30 秒体验（合成数据，不联网）
 
 ```bash
-.venv/bin/python scripts/make_demo_volume.py
-dbas volume register data/demo_volume --id demo
+.venv/bin/python scripts/make_demo_volume.py        # 生成合成 NetCDF
+dbas volume register data/demo_volume --id demo     # 注册卷
 dbas scan --volume demo --mode inventory --enqueue-metadata
-dbas scan --volume demo --mode metadata
-dbas report inventory
+dbas scan --volume demo --mode metadata             # 解析 NetCDF 头
+dbas report inventory                               # 生成盘点报告
 dbas status
 ```
 
-要体验类 ERA5 全球逐日数据的区域裁切（需先安装 `.[eda]`）：
+体验类 ERA5 全球逐日数据的区域裁切（需 `.[eda]`）：
 
 ```bash
 .venv/bin/python scripts/make_demo_era_volume.py data/era_like_volume 3
@@ -78,75 +123,91 @@ dbas subset enqueue --volume eralike
 dbas subset run
 ```
 
-运行数据默认位于 `data/`，已被 `.gitignore` 排除。
-
-## 常用操作
+### 接入真实数据盘
 
 ```bash
-# 数据卷：必须为卷分配稳定 ID
-dbas volume register <挂载点> --id era5hd
-dbas volume list
+# 1. 注册：必须显式指定稳定 ID（跨重挂载不变）
+dbas volume register /Volumes/ERA5HD --id era5hd
 
-# 扫描：先盘点，再解析；budget/batch 控制单次规模
+# 2. 先盘点，确认文件数符合预期，再入队解析
 dbas scan --volume era5hd --mode inventory
 dbas scan --volume era5hd --mode inventory --enqueue-metadata
+
+# 3. 解析头信息：小预算试跑，中断后重跑同一命令即续跑
 dbas scan --volume era5hd --mode metadata --budget 60 --batch-size 20
-dbas scan --volume era5hd --mode incremental
 
-# 中断后重跑同一命令即可续跑
-dbas scan --volume era5hd --mode metadata
-
-# 校验
-dbas verify --volume era5hd
-dbas checksum --volume era5hd --batch-size 5
-
-# 任务、报告与数据库维护
-dbas tasks list --status pending
-dbas tasks show TASK_ID
-dbas tasks prune
-dbas report inventory
-dbas db check
-dbas db backup
-
-# 数据集、画像与 QC
-dbas dataset list
+# 4. 数据集识别 → 画像 → QC
 dbas dataset assign --volume era5hd
 dbas profile --volume era5hd --limit 100
 dbas qc run --volume era5hd
 dbas qc report --volume era5hd
-dbas qc report --dataset era5_pressure
 
-# 区域裁切（需要 .[eda]；源卷只读）
-dbas subset plan --volume era5hd
-dbas subset enqueue --volume era5hd --region qhp_main --variables t2m,tp
-dbas subset run --budget 600 --batch-size 5
+# 5. 校验与备份
+dbas verify --volume era5hd
+dbas checksum --volume era5hd --batch-size 5
+dbas db check && dbas db backup
 ```
 
-任务通常写入 `data/catalog.db`，报告写入 `data/reports/`，subset 产物写入 `data/analysis/`。这些路径均属于运行时产物，不应提交到 Git。
+### CDS 下载
 
-## CDS API 下载
-
-1. 在 [Copernicus Climate Data Store](https://cds.climate.copernicus.eu/) 注册并获取 API Key。
-2. 使用环境变量 `CDSAPI_URL`/`CDSAPI_KEY`，或写入用户目录下的 `~/.cdsapirc`；凭证不要提交。
-3. 先预览请求，再入队并执行：
+1. 在 [Copernicus Climate Data Store](https://cds.climate.copernicus.eu/) 注册并获取 API Key；
+2. 凭证写入 `~/.cdsapirc` 或环境变量 `CDSAPI_URL`/`CDSAPI_KEY`，**不要提交**；
+3. 始终先 plan 预览，确认时间范围、变量、区域与文件大小后再入队：
 
 ```bash
-.venv/bin/python -m pip install -e '.[fetch]'
 dbas fetch plan --config configs/fetch/era5_demo.yaml
 dbas fetch enqueue --config configs/fetch/era5_demo.yaml
 dbas fetch run --config configs/fetch/era5_demo.yaml
 ```
 
-下载支持 `.part` 临时文件和原子改名；成功后文件会自动登记到 catalog 并入队元数据解析。请始终先执行 `fetch plan`，确认时间范围、变量、区域和文件大小。
+下载成功后文件自动登记到 `downloads` 卷并入队元数据解析——之后的
+verify/checksum/metadata 流程与外接硬盘完全一致，这就是「下载测试管理链路」。
 
-## 配置与安全边界
+### 任务与运维
 
-- 默认配置在 `src/dbas/core/config.py`，项目级覆盖在 `configs/system.yaml`；批次、预算、资源水位和重试策略均可配置。
-- 机器专属路径放在未提交的 `configs/local*.yaml` 或环境变量中；不要把凭证、数据库、下载文件和真实数据路径写入公共配置。
-- 推荐使用小批次、低并发和断点续跑。资源水位是“尽量早停”的软保护，不是 OS 层绝对内存隔离。
-- 真实数据盘的挂载、离线卷处理和备份策略见 [docs/operations.md](docs/operations.md)；系统设计见 [docs/architecture.md](docs/architecture.md)。
+```bash
+dbas tasks list --status pending        # 待办
+dbas tasks show TASK_ID                 # 失败详情
+dbas tasks prune                        # 清理已完成任务
+dbas report inventory                   # Markdown 报告
+dbas db check                           # SQLite integrity check
+dbas db backup                          # 在线备份
+```
 
-## 项目结构
+运行产物路径：任务与索引在 `data/catalog.db`，报告在 `data/reports/`，
+subset 产物在 `data/analysis/`。这些都在 `.gitignore` 内，不入 Git。
+
+---
+
+## 四、架构
+
+模块依赖方向（单向，无环）：
+
+```text
+cli → scanner / fetch / reports / scheduler
+scheduler(runner) → catalog（任务表）、resource_guard
+scanner → catalog、inspection（dbas_core）
+fetch → catalog（下载注册 + 入队 scan_metadata）
+catalog → core（配置、异常）
+```
+
+`fetch` 和 `scanner` 平级，都经由 catalog 写入同一索引。数据库 v1 关键关系：
+
+- `volumes 1—N files`，文件主键 = sha1(volume_id + rel_path)
+- `datasets 1—N files`：数据集跨卷、卷可混放多个数据集
+- `files 1—N variables/dimensions`（解析成功后整体替换）
+- `files 1—1 file_profiles 1—N variable_profiles`（画像结果）
+- `quality_reports` 记录文件/变量/数据集级发现与证据
+- `tasks 1—N task_attempts`，`scan_runs` 记录每次扫描统计
+- `schema_migrations` 驱动版本化迁移
+
+设计原则与安全语义（原始数据只读、显式未知、状态机定义）详见
+[docs/architecture.md](docs/architecture.md)；磁盘离线处理、断点续跑、
+资源保护边界等运维细则见 [docs/operations.md](docs/operations.md)。
+
+---
+
+## 五、项目结构
 
 ```text
 src/dbas/
@@ -159,37 +220,68 @@ src/dbas/
 └── cli.py           统一命令入口
 scripts/             合成数据与实验性分析脚本
 tests/               合成数据测试（默认不联网、不依赖真实 ERA5 卷）
+docs/                架构说明、运行手册与例图
+configs/             系统配置与 fetch 请求模板
 ```
 
-核心算法（配置/异常/日志、catalog、数据集识别、画像、区域裁切、QC、NetCDF 头解析）
-已拆分至独立仓库 [dbas-core](https://github.com/Neiyako/dbas-core)（包名 `dbas_core`），
-本仓库安装时自动以 Git 依赖方式拉取。
+算法与存储层在 [dbas-core](https://github.com/Neiyako/dbas-core)：
 
-## 测试
+| 模块 | 内容 |
+|------|------|
+| `dbas_core.config` / `exceptions` / `logging` | 配置加载、异常体系、日志 |
+| `dbas_core.catalog` | SQLite schema、迁移、卷/文件/任务仓储 |
+| `dbas_core.inspection` | NetCDF 只读头解析（变量/维度/时间/空间） |
+| `dbas_core.analysis.datasets` | 数据集识别规则与内置规格 |
+| `dbas_core.analysis.profile` | 抽样画像与物理量统计 |
+| `dbas_core.analysis.regions` | 研究区域注册表（qhp_main/qhp_wide） |
+| `dbas_core.analysis.subset` | xarray+dask 惰性区域裁切 |
+| `dbas_core.analysis.cloud_water_proxy` | PW/RH/云水代理公式与审计 |
+| `dbas_core.qc` | 文件级与数据集级 QC 规则 |
 
-测试使用临时目录和合成 NetCDF，覆盖 catalog、CLI、扫描器、任务调度、fetch 管理、数据集识别、画像/QC、subset 与云水代理计算。完整运行：
+---
+
+## 六、配置与安全边界
+
+- 默认配置在 dbas-core 的 `config.py`，项目级覆盖在 `configs/system.yaml`；
+  批次、预算、资源水位、重试策略均可配置。
+- 机器专属路径放未提交的 `configs/local*.yaml` 或环境变量；凭证、数据库、
+  下载文件、真实数据路径一律不进公共配置。
+- 推荐小批次、低并发、断点续跑。资源水位是「尽量早停」的软保护，
+  不是 OS 级绝对内存隔离。
+
+---
+
+## 七、测试
+
+测试使用临时目录与合成 NetCDF，不联网、不依赖真实 ERA5 卷：
 
 ```bash
 .venv/bin/python -m pip install -e '.[dev,eda]'
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest                                  # 全量
+.venv/bin/python -m pytest tests/test_cli.py                # 单组
+.venv/bin/python -m pytest tests/test_scanner.py -k incremental
 ```
 
-只运行某一组：
+覆盖范围：CLI 全命令、扫描器各模式、任务调度（认领/预算/重试/陈旧回收）、
+fetch 管理链路、dbas-core 的数据集识别/画像/QC/subset/云水代理公式。
 
-```bash
-.venv/bin/python -m pytest tests/test_catalog.py tests/test_cli.py
-.venv/bin/python -m pytest tests/test_subset.py tests/test_profile.py
-```
+---
 
-## 路线图与限制
+## 八、路线图与已知限制
 
 - [x] 阶段 1：配置、CLI、SQLite、卷注册、分批扫描、预算、断点续跑
 - [x] fetch：CDS API 小体量下载与 catalog 集成
 - [x] 阶段 4a：区域裁切（qhp_main/qhp_wide、xarray+dask、任务队列）
 - [x] 阶段 4b 首版：内容画像与 QC 证据
+- [x] 核心算法拆分至 dbas-core 独立仓库
 - [ ] 阶段 4b 完整：更多 QC 规则、累计量/瞬时量判别和人工复核
 - [ ] 阶段 4c：通用气候态、季节循环、海拔分层统计与图表
 - [ ] 阶段 5：非破坏性清洗、特征工程、Parquet 导出与建模接口
 - [ ] 阶段 3 强化：危险解析的子进程隔离与父进程超时监控
 
-已知限制包括：非 ISO 日历（如 `360_day`）当前只记录未知并告警；画像为抽样统计而非逐格全量统计；文件级覆盖率依赖规范化文件名；资源保护不能替代操作系统级隔离。
+已知限制：非 ISO 日历（如 `360_day`）只记录未知并告警；画像为抽样统计而非
+逐格全量统计；文件级覆盖率依赖规范化文件名；资源保护不能替代 OS 级隔离。
+
+## 许可
+
+见仓库根目录 [LICENSE](LICENSE)。

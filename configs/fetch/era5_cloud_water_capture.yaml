@@ -1,0 +1,15 @@
+# 云水相关 CDS 请求模板；变量名必须按目标数据集目录核对后再实际运行。
+dataset: reanalysis-era5-single-levels
+variables:
+  # 候选：total_cloud_cover、total_column_water_vapour、total_precipitation
+  - total_cloud_cover
+years: ["2024"]
+months: ["01"]
+area: [40, 70, 25, 105]
+target_dir: data/downloads
+volume_id: downloads
+extra_request:
+  day: ["01"]
+  time: ["00:00"]
+  data_format: netcdf
+# 当前本地 era5_pressure 卷只有 t/q/u/v；clwc/ciwc 等变量尚未验证。

@@ -1,0 +1,5 @@
+# CDS 抓包会话配置（仅元数据，不含凭证）
+output: data/captures
+max_body_bytes: 16384
+host: api.ecmwf.int
+port: 443

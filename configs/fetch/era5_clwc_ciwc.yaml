@@ -1,0 +1,20 @@
+# clwc/ciwc 云水混合比小样本下载配置（CDS API）
+# 数据集：reanalysis-era5-pressure-levels
+# 变量（CDS 目录命名）：
+#   clwc = specific_cloud_liquid_water_content（比云液态水含量）
+#   ciwc = specific_cloud_ice_water_content（比云冰水含量）
+# 小样本：2024-01-01 00:00，青藏高原区域，500/400/300 hPa 三层，验证链路后再扩量。
+dataset: reanalysis-era5-pressure-levels
+variables:
+  - specific_cloud_liquid_water_content
+  - specific_cloud_ice_water_content
+years: ["2024"]
+months: ["01"]
+area: [40, 70, 25, 105]          # [北, 西, 南, 东]，青藏高原
+target_dir: data/downloads
+volume_id: downloads
+extra_request:
+  day: ["01"]
+  time: ["00:00"]
+  pressure_level: ["500", "400", "300"]
+  data_format: netcdf

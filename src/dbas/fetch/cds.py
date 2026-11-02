@@ -129,7 +129,8 @@ def ensure_download_volume(catalog: Catalog, cfg: FetchConfig, project_root: Pat
         label="ERA5 API 下载目录", notes="由 dbas fetch 创建")
 
 
-def download_one(catalog: Catalog, params: dict, project_root: Path) -> dict:
+def download_one(catalog: Catalog, params: dict, project_root: Path,
+                 capture_dir: Path | None = None, task_id: str | None = None) -> dict:
     """执行单个下载任务（由 Runner 调度）。"""
     try:
         import cdsapi
@@ -145,6 +146,9 @@ def download_one(catalog: Catalog, params: dict, project_root: Path) -> dict:
         client = CLIENT_FACTORY()
     else:
         client = cdsapi.Client(quiet=True, wait_until_complete=True, timeout=3600)
+    if capture_dir is not None:
+        from dbas.fetch.capture import CaptureConfig, JsonlWriter, ObservedCdsClient
+        client = ObservedCdsClient(client, JsonlWriter(CaptureConfig(Path(capture_dir))), task_id=task_id)
     try:
         client.retrieve(params["dataset"], params["request"], str(part))
     except Exception as e:  # noqa: BLE001 cdsapi 异常类型多，统一转 FetchError

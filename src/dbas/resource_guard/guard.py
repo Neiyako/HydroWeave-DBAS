@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import psutil
 
-from dbas.core.logging import get_logger
+from dbas_core.logging import get_logger
 
 log = get_logger("resource")
 

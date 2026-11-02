@@ -22,9 +22,9 @@ from typing import Any, Callable
 
 import yaml
 
-from dbas.catalog.repository import Catalog
-from dbas.core.exceptions import ConfigError, FetchError
-from dbas.core.logging import get_logger
+from dbas_core.catalog.repository import Catalog
+from dbas_core.exceptions import ConfigError, FetchError
+from dbas_core.logging import get_logger
 
 log = get_logger("fetch")
 

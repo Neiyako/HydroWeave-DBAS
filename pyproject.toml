@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "DBAS: ERA5 科研数据管理与分析系统（Data Management and Analysis System）"
 requires-python = ">=3.10"
 dependencies = [
+    "dbas-core @ git+https://github.com/Neiyako/dbas-core.git",
     "netCDF4>=1.7",
     "numpy>=1.26",
     "pandas>=2.1",

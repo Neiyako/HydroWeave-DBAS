@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from dbas.catalog.repository import make_file_id
-from dbas.core.exceptions import ScanError
+from dbas_core.catalog.repository import make_file_id
+from dbas_core.exceptions import ScanError
 from dbas.scanner.scan import (checksum_one, scan_inventory,
                                scan_metadata_one, verify_one)
 

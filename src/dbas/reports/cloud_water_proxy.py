@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping
 import json
 
-from dbas.analysis.cloud_water_proxy import formula_audit
+from dbas_core.analysis.cloud_water_proxy import formula_audit
 
 
 def availability_report(variables: Mapping[str, Any]) -> dict[str, Any]:

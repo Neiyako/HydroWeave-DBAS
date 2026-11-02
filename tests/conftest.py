@@ -5,7 +5,7 @@ import netCDF4
 import numpy as np
 import pytest
 
-from dbas.catalog.repository import Catalog
+from dbas_core.catalog.repository import Catalog
 
 
 def make_nc(path, *, n_time=4, n_lat=3, n_lon=3, var_name="t2m",

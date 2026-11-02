@@ -8,7 +8,7 @@ import pytest
 from dbas.fetch.cds import (FetchConfig, CLIENT_FACTORY, download_one,
                             enqueue_fetch_tasks, ensure_download_volume,
                             request_dedup_key)
-from dbas.core.exceptions import FetchError
+from dbas_core.exceptions import FetchError
 
 from tests.conftest import make_nc
 
@@ -43,7 +43,7 @@ def test_fetch_config_builds_requests(fcfg):
 def test_fetch_config_requires_fields(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("dataset: x\n", encoding="utf-8")
-    from dbas.core.exceptions import ConfigError
+    from dbas_core.exceptions import ConfigError
     with pytest.raises(ConfigError):
         FetchConfig.from_yaml(bad)
 
@@ -54,7 +54,7 @@ def test_fetch_config_requires_fields(tmp_path):
 ])
 def test_fetch_config_rejects_bad_area(tmp_path, area, msg):
     """反向 area 会让 MARS 返回空数据，必须在入队前拦住。"""
-    from dbas.core.exceptions import ConfigError
+    from dbas_core.exceptions import ConfigError
     p = tmp_path / "a.yaml"
     p.write_text(FETCH_YAML.replace("[40, 110, 30, 120]", str(area)),
                  encoding="utf-8")
@@ -93,7 +93,7 @@ def test_download_registers_file_and_enqueues_metadata(cat, fcfg, tmp_path, monk
     result = download_one(cat, params, tmp_path)
     assert Path(result["path"]).exists()
     # 文件已注册进 catalog
-    f = cat.get_file(__import__("dbas.catalog.repository", fromlist=["make_file_id"])
+    f = cat.get_file(__import__("dbas_core.catalog.repository", fromlist=["make_file_id"])
                      .make_file_id("downloads", params["target_rel"]))
     assert f is not None and f["size_bytes"] == result["size_bytes"]
     # 已自动入队元数据解析任务（另有 1 个未执行的下载任务留在队列）

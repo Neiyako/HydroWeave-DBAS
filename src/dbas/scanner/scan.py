@@ -13,10 +13,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dbas.catalog.repository import Catalog, VolumeOffline
-from dbas.core.exceptions import ScanError
-from dbas.core.logging import get_logger
-from dbas.inspection.netcdf_meta import NetcdfParseError, parse_netcdf_header
+from dbas_core.catalog.repository import Catalog, VolumeOffline
+from dbas_core.exceptions import ScanError
+from dbas_core.logging import get_logger
+from dbas_core.inspection.netcdf_meta import NetcdfParseError, parse_netcdf_header
 
 log = get_logger("scanner")
 

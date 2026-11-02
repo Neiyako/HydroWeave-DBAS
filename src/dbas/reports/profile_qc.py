@@ -7,8 +7,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from dbas.analysis.datasets import get_dataset_spec
-from dbas.catalog.repository import Catalog
+from dbas_core.analysis.datasets import get_dataset_spec
+from dbas_core.catalog.repository import Catalog
 from dbas.reports.report import atomic_write_text
 
 _SEV_ORDER = {"error": 0, "warn": 1, "info": 2}

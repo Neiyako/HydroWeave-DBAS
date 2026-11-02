@@ -16,8 +16,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
-from dbas.catalog.repository import Catalog, VolumeOffline
-from dbas.core.logging import get_logger
+from dbas_core.catalog.repository import Catalog, VolumeOffline
+from dbas_core.logging import get_logger
 from dbas.resource_guard.guard import ResourceGuard
 
 log = get_logger("runner")

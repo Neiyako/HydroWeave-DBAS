@@ -150,21 +150,20 @@ dbas fetch run --config configs/fetch/era5_demo.yaml
 
 ```text
 src/dbas/
-├── core/            配置、异常、日志与线程限制
-├── catalog/         SQLite schema、卷/文件/任务仓库
 ├── storage/         卷身份识别与挂载辅助
-├── inspection/      NetCDF 头解析
 ├── scanner/         inventory / incremental / metadata / verify / checksum
 ├── scheduler/       原子认领、预算、重试与陈旧任务回收
 ├── resource_guard/  RSS/可用内存软保护
 ├── fetch/           ERA5 CDS API 下载器
-├── analysis/        数据集识别、内容画像与区域裁切
-├── qc/              文件级与数据集级 QC 规则
 ├── reports/         Markdown 报告生成
 └── cli.py           统一命令入口
 scripts/             合成数据与实验性分析脚本
 tests/               合成数据测试（默认不联网、不依赖真实 ERA5 卷）
 ```
+
+核心算法（配置/异常/日志、catalog、数据集识别、画像、区域裁切、QC、NetCDF 头解析）
+已拆分至独立仓库 [dbas-core](https://github.com/Neiyako/dbas-core)（包名 `dbas_core`），
+本仓库安装时自动以 Git 依赖方式拉取。
 
 ## 测试
 

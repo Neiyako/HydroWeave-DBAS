@@ -5,8 +5,8 @@ import os
 import time
 from pathlib import Path
 
-from dbas.catalog.repository import Catalog
-from dbas.core.logging import get_logger
+from dbas_core.catalog.repository import Catalog
+from dbas_core.logging import get_logger
 
 log = get_logger("reports")
 

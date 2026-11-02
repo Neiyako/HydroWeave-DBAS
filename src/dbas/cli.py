@@ -8,15 +8,15 @@ import sys
 import time
 from pathlib import Path
 
-from dbas.analysis.datasets import detect_dataset, ensure_builtin_datasets
-from dbas.analysis.profile import profile_one
-from dbas.catalog.db import current_version
-from dbas.catalog.repository import Catalog, VolumeOffline
-from dbas.core.config import ensure_dirs, load_config
-from dbas.qc.rules import run_dataset_checks
+from dbas_core.analysis.datasets import detect_dataset, ensure_builtin_datasets
+from dbas_core.analysis.profile import profile_one
+from dbas_core.catalog.db import current_version
+from dbas_core.catalog.repository import Catalog, VolumeOffline
+from dbas_core.config import ensure_dirs, load_config
+from dbas_core.qc.rules import run_dataset_checks
 from dbas.reports.profile_qc import profile_qc_report
-from dbas.core.exceptions import DbasError
-from dbas.core.logging import get_logger, setup_logging
+from dbas_core.exceptions import DbasError
+from dbas_core.logging import get_logger, setup_logging
 from dbas.resource_guard.guard import ResourceGuard
 from dbas.scheduler.runner import Handler, Runner, RunContext
 from dbas.scanner import scan as scanner_mod
@@ -425,8 +425,8 @@ def cmd_db(args, cfg) -> int:
 # --------------------------------------------------------------------------
 
 def cmd_subset(args, cfg) -> int:
-    from dbas.analysis.regions import get_region, overlaps_file_grid
-    from dbas.analysis.subset import ensure_analysis_volume, subset_one
+    from dbas_core.analysis.regions import get_region, overlaps_file_grid
+    from dbas_core.analysis.subset import ensure_analysis_volume, subset_one
 
     acfg = cfg.section("analysis")
     region_name = getattr(args, "region", None) or acfg["region"]

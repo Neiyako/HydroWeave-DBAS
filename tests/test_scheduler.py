@@ -23,7 +23,7 @@ class FlakyHandler:
 
 
 def _mk_cat(tmp_path):
-    from dbas.catalog.repository import Catalog
+    from dbas_core.catalog.repository import Catalog
     return Catalog(tmp_path / "t.db")
 
 

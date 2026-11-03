@@ -1,0 +1,56 @@
+name: 功能请求
+description: 建议一个新功能或改进
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **先确认边界**：DBAS 只做数据管理与抓取。
+
+        - ✅ 扫描、索引、校验、备份、任务编排、CDS 下载、Zarr 派生、报告
+        - ❌ 科研计算、物理量公式、误差分析、绘图（属于
+          [HydroWeave 实验仓](https://github.com/Neiyako/HydroWeave)）
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的实际问题
+      description: 描述场景，而不是直接说"应该加 xxx 功能"
+      placeholder: |
+        我有 3 块 8TB 硬盘，换机器后要手动确认卷 ID 有没有变，
+        每次都担心索引对不上。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的方案
+      description: 可选。如果有具体想法写在这里
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你试过的替代方案
+      description: 目前是怎么绕过这个问题的
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及模块
+      options:
+        - scanner（扫描/解析/校验）
+        - scheduler（任务编排）
+        - storage（卷管理/备份）
+        - fetch（CDS 下载）
+        - zarr_export（数组层）
+        - reports（报告）
+        - CLI / 文档
+        - 不确定
+    validations:
+      required: true

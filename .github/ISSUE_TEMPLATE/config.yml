@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题（私密报告）
+    url: https://github.com/Neiyako/HydroWeave-DBAS/security/advisories/new
+    about: 请勿用公开 Issue 报告安全漏洞，使用私密通道
+  - name: 部署与使用问题
+    url: https://github.com/Neiyako/HydroWeave-DBAS/blob/main/docs/deployment.md
+    about: 先查部署文档的"故障排查"一节
+  - name: 贡献指南
+    url: https://github.com/Neiyako/HydroWeave-DBAS/blob/main/CONTRIBUTING.md
+    about: 提交代码前请阅读边界说明与验收标准

@@ -5,7 +5,7 @@
 [![CI](https://github.com/Neiyako/HydroWeave-DBAS/actions/workflows/ci.yml/badge.svg)](https://github.com/Neiyako/HydroWeave-DBAS/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-orange)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange)](pyproject.toml)
 
 [English](README.en.md) · **简体中文**
 
@@ -285,6 +285,39 @@ CI 五个 job：
 | [运维手册](docs/operations.md) | 日常维护、备份恢复、踩坑记录 |
 | [数组层设计](docs/zarr-layer.md) | 分块策略、清单哈希、性能实测 |
 | [下载层先例对比](docs/prior-art-era5-fetch.md) | 与 cdsapi / cdsswarm 的取舍 |
+| [变更日志](CHANGELOG.md) | 各版本的改动记录 |
+| [贡献指南](CONTRIBUTING.md) | 边界说明、开发流程与验收标准 |
+| [行为准则](CODE_OF_CONDUCT.md) | 社区行为规范 |
+
+## 参与贡献
+
+欢迎提 Issue 与 PR。提交前请确认改动属于本仓边界（数据管理与抓取），
+并在本地跑通三项门禁：
+
+```bash
+.venv/bin/python -m ruff check src tests scripts   # 0 问题
+.venv/bin/python -m mypy                           # 0 错误
+.venv/bin/python -m pytest --cov                   # 全绿，覆盖率 ≥ 80%
+```
+
+详见 [贡献指南](CONTRIBUTING.md)。安全问题请走
+[私密通道](https://github.com/Neiyako/HydroWeave-DBAS/security/advisories/new)，
+不要开公开 Issue。
+
+## 引用
+
+如果 DBAS 对你的研究有帮助，可用仓库内的 [CITATION.cff](CITATION.cff)：
+
+```bibtex
+@software{dbas2026,
+  title   = {DBAS: Data Asset Management and Task Orchestration for Scientific Data},
+  author  = {Neiyako},
+  year    = {2026},
+  version = {1.0.0},
+  url     = {https://github.com/Neiyako/HydroWeave-DBAS},
+  license = {MIT}
+}
+```
 
 ## 许可
 

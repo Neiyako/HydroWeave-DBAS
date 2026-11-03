@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "如果本软件对你的研究有帮助，请按以下格式引用。If you use DBAS in your research, please cite it as below."
+title: "DBAS: Data Asset Management and Task Orchestration for Scientific Data"
+abstract: >-
+  DBAS catalogs scattered scientific data (ERA5/NetCDF) across external drives,
+  working directories and download folders into a searchable, verifiable,
+  traceable and recoverable local catalog database. It provides stable volume
+  identity, incremental scanning, metadata indexing, integrity verification,
+  online backup, task orchestration with resumable execution, CDS download
+  management, and a Zarr array layer whose chunking strategy is derived from
+  the query pattern rather than copied from public datasets. Source volumes
+  remain strictly read-only; array-layer stores are registered back into the
+  catalog with a manifest-level hash as bit-level evidence.
+type: software
+authors:
+  - given-names: Neiyako
+    email: Neiyako@163.com
+license: MIT
+version: 1.0.0
+date-released: 2026-11-03
+repository-code: "https://github.com/Neiyako/HydroWeave-DBAS"
+url: "https://github.com/Neiyako/HydroWeave-DBAS"
+keywords:
+  - ERA5
+  - NetCDF
+  - Zarr
+  - scientific data management
+  - data catalog
+  - task orchestration
+  - reanalysis
+  - reproducibility

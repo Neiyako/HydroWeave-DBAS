@@ -5,7 +5,7 @@
 [![CI](https://github.com/Neiyako/HydroWeave-DBAS/actions/workflows/ci.yml/badge.svg)](https://github.com/Neiyako/HydroWeave-DBAS/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-orange)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange)](pyproject.toml)
 
 **English** · [简体中文](README.md)
 
@@ -282,6 +282,41 @@ Known limitations:
 | [Operations](docs/operations.md) | Routine maintenance, backup/restore, pitfalls |
 | [Array layer design](docs/zarr-layer.md) | Chunking strategy, manifest hashing, benchmarks |
 | [Fetch prior art](docs/prior-art-era5-fetch.md) | Trade-offs versus cdsapi / cdsswarm |
+| [Changelog](CHANGELOG.md) | Release notes for each version |
+| [Contributing](CONTRIBUTING.md) | Scope, workflow and acceptance criteria |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Community behaviour standards |
+
+## Contributing
+
+Issues and pull requests are welcome. Please make sure your change fits this
+repository's scope (data management and acquisition) and that all three gates
+pass locally:
+
+```bash
+.venv/bin/python -m ruff check src tests scripts   # 0 issues
+.venv/bin/python -m mypy                           # 0 errors
+.venv/bin/python -m pytest --cov                   # all green, coverage >= 80%
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details. For security issues, use the
+[private channel](https://github.com/Neiyako/HydroWeave-DBAS/security/advisories/new)
+instead of a public issue.
+
+## Citation
+
+If DBAS helps your research, please cite it using the bundled
+[CITATION.cff](CITATION.cff):
+
+```bibtex
+@software{dbas2026,
+  title   = {DBAS: Data Asset Management and Task Orchestration for Scientific Data},
+  author  = {Neiyako},
+  year    = {2026},
+  version = {1.0.0},
+  url     = {https://github.com/Neiyako/HydroWeave-DBAS},
+  license = {MIT}
+}
+```
 
 ## License
 

@@ -4,9 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbas"
-version = "0.1.0"
-description = "DBAS: ERA5 科研数据管理与分析系统（Data Management and Analysis System）"
+version = "1.0.0"
+description = "Data asset management and task orchestration for scientific data (ERA5/NetCDF)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+authors = [{ name = "Neiyako", email = "Neiyako@163.com" }]
+keywords = [
+    "era5", "netcdf", "zarr", "scientific-data", "data-catalog",
+    "data-management", "task-orchestration", "reanalysis",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: System :: Archiving :: Backup",
+    "Typing :: Typed",
+]
+
 # 核心算法库 dbas_core 已内联进 src/dbas_core/（原为独立 git 仓库）。
 # 内联理由：原仓库不可访问会导致整个项目无法安装；内联后 clone 即可装，
 # 也避免上游默认分支变动悄悄改变科研口径。升级即改本仓源码 + 跑测试。
@@ -18,6 +40,13 @@ dependencies = [
     "PyYAML>=6.0",
     "psutil>=5.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Neiyako/HydroWeave-DBAS"
+Repository = "https://github.com/Neiyako/HydroWeave-DBAS"
+Issues = "https://github.com/Neiyako/HydroWeave-DBAS/issues"
+Changelog = "https://github.com/Neiyako/HydroWeave-DBAS/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Neiyako/HydroWeave-DBAS/blob/main/docs/deployment.md"
 
 [project.optional-dependencies]
 fetch = ["cdsapi>=0.7"]

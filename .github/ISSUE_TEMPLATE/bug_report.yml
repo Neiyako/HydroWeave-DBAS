@@ -1,0 +1,82 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量提供完整信息——"报错了"无法定位问题。
+
+        提交前请先确认：
+        - 已用 `./bin/dbas` 而不是 `python -m dbas` 启动（见部署文档第四节）
+        - 已搜索过现有 Issue
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么，你期望发生什么
+      placeholder: |
+        实际：`zarr run` 报 xxx 错误
+        期望：应该成功导出 store
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 具体命令，按顺序
+      placeholder: |
+        ./bin/dbas volume register /Volumes/ERA5HD --id era5hd
+        ./bin/dbas scan --volume era5hd --mode inventory
+        ./bin/dbas zarr enqueue --volume era5hd --target point_series
+        ./bin/dbas zarr run
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: 完整报错原文
+      description: 从 Traceback 第一行到最后一行，不要截断
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: "`./bin/dbas status` 输出"
+      description: 请去掉敏感路径后粘贴
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: DBAS 版本
+      description: "`pyproject.toml` 中的 version，或 `git describe --tags`"
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本与操作系统
+      placeholder: "Python 3.13.5 / macOS 15 arm64"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      options:
+        - ./scripts/setup.sh --all
+        - ./scripts/setup.sh --with-zarr
+        - 手动 pip install -e '.[dev,zarr]'
+        - 其他（请在描述里说明）
+    validations:
+      required: true

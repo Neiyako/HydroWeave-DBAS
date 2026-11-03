@@ -55,6 +55,10 @@ def normalize_axes(ds) -> tuple:
     lon = _coord_name(ds, LON_NAMES, "经度")
     if ds[lat].ndim != 1 or ds[lon].ndim != 1:
         raise SubsetError(f"暂不支持曲线网格（{lat}/{lon} 非一维坐标）")
+    latvals = np.asarray(ds[lat].values, dtype=float)
+    if latvals.size >= 2 and latvals[0] > latvals[-1]:
+        # 翻转必须留痕：产物的纬度顺序被改过，调用方与后续 QC 都要能看到
+        notes.append("纬度轴降序已翻转为升序")
     ds = _ascending(ds, lat)
     lonvals = np.asarray(ds[lon].values, dtype=float)
     if lonvals.size and float(lonvals.max()) > 180.0:

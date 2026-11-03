@@ -38,7 +38,7 @@
 - 不要修改 src/ 下的任何代码。部署失败请报告错误原文，由我决定如何处理。
 
 5. 完成后再跑一遍自检，把这三项结果贴给我：
-   .venv/bin/python -m pytest                          # 预期 90 passed
+   .venv/bin/python -m pytest                          # 预期 158 passed
    .venv/bin/python scripts/demo/make_demo_volume.py   # 生成合成数据
    ./bin/dbas zarr plan --source data/demo_volume/2023/era5_demo_00.nc
 ```
@@ -184,7 +184,7 @@ DBAS 已装好并已索引了数据卷 <卷ID>（启动命令 ./bin/dbas）。
 | 安装脚本 | `./scripts/setup.sh --with-zarr` |
 | 配置文件 | `configs/system.yaml` |
 | 运行产物 | `data/`（catalog.db、reports、backups、arrays） |
-| 测试 | `.venv/bin/python -m pytest`（90 passed） |
+| 测试 | `.venv/bin/python -m pytest --cov`（158 passed，覆盖率 ≥80%） |
 | 文档 | `docs/deployment.md`（部署）、`docs/architecture.md`、`docs/zarr-layer.md` |
 | Python | 3.11+ |
 | 核心库 | 已内联在 `src/dbas_core/`，无需单独安装 |

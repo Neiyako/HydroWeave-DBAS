@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,7 +40,7 @@ class ScanStats:
 
 
 def _iter_files(root: Path, extensions: list[str],
-                exclude_dirs: list[str] = ()):
+                exclude_dirs: Sequence[str] = ()):
     """流式遍历目录树，产出 (rel_path, full_path, st)。
 
     extensions 含 "*" 时收录全部文件；exclude_dirs 按目录名剪枝。
@@ -70,7 +71,7 @@ def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
                    *, enqueue_metadata: bool = False,
                    incremental: bool = False,
                    netcdf_extensions: list[str] | None = None,
-                   exclude_dirs: list[str] = ()) -> ScanStats:
+                   exclude_dirs: Sequence[str] = ()) -> ScanStats:
     """盘点卷内文件。incremental=True 时只把新增/变化的文件送去解析。
 
     extensions 可为 "*"（全量清单化）；此时只有后缀落在 netcdf_extensions 内的

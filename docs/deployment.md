@@ -135,7 +135,7 @@ chflags nohidden .venv/lib/python3.*/site-packages/*.pth
 .venv/bin/python -m pytest
 ```
 
-**预期**：`90 passed`。全部使用临时目录与合成数据，不联网、不需要真实 ERA5 卷。
+**预期**：`158 passed`，且输出 `Required test coverage of 80.0% reached`。全部使用临时目录与合成数据，不联网、不需要真实 ERA5 卷。
 
 只跑数组层：`./.venv/bin/python -m pytest -q tests/test_zarr_export.py`（27 passed）。
 

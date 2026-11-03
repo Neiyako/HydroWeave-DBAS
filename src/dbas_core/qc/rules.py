@@ -247,12 +247,12 @@ def check_dataset(catalog, dataset_id: str) -> list[Finding]:
             (dataset_id,)).fetchall()
         have = {r[0] for r in have_rows}
         if have:
-            missing = sorted(spec.variables - have)
-            if missing:
+            absent: list[str] = sorted(spec.variables - have)
+            if absent:
                 out.append(Finding(
                     "R105_VARIABLE_MISSING", "warn", "dataset", target,
-                    f"数据集定义变量中未见：{', '.join(missing)}",
-                    {"missing": missing, "observed": sorted(have)},
+                    f"数据集定义变量中未见：{', '.join(absent)}",
+                    {"missing": absent, "observed": sorted(have)},
                     needs_human=True, dataset_id=dataset_id))
 
     return out

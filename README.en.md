@@ -190,7 +190,7 @@ HydroWeave-DBAS/
 │   ├── setup.sh                One-shot idempotent setup
 │   ├── demo/                   Synthetic volume generators
 │   └── cds_*                   Capture diagnostics (optional)
-├── tests/                      90 cases, all synthetic data, no network
+├── tests/                      158 cases, all synthetic data, no network
 ├── docs/                       architecture / deployment / operations / zarr-layer / agent-prompts
 ├── data/                       Runtime output: catalog.db, reports, backups, arrays (git-ignored)
 ├── pyproject.toml              Packaging, dependencies, pytest and ruff config
@@ -234,16 +234,28 @@ Every command supports `--help`.
 ## Testing & CI
 
 ```bash
-.venv/bin/python -m pytest          # 90 passed
+.venv/bin/python -m pytest --cov    # 158 passed, 80% coverage gate
 .venv/bin/python -m ruff check src tests scripts
+.venv/bin/python -m mypy            # type check (src only)
 ```
 
 Tests use temporary directories and synthetic NetCDF only — **no network, no real ERA5 volume needed**. Coverage includes the CLI, scanning, scheduling, the fetch chain, online backup and failure cleanup, plus array-layer chunking, round-trip consistency, manifest hashing, catalog registration and clobber protection.
 
-CI runs four jobs:
+Quality gates (identical locally and in CI; any failure turns the build red):
 
-- **Lint**: `ruff` with a deliberately conservative rule set (defects only, not style) so the gate does not rot into permanent red over formatting taste;
-- **Test**: Python 3.11 / 3.12 / 3.13 matrix;
+| Check | Tool | Gate | Measured |
+|---|---|---|---|
+| Static analysis | `ruff` | 0 issues | passing |
+| Type checking | `mypy` | 0 errors (`src`, 40 files) | passing |
+| Test coverage | `pytest-cov` | **≥ 80%** (branch) | 81.6% |
+
+The `ruff` rule set is deliberately conservative (defects only, not style) so the gate does not rot into permanent red over formatting taste. The coverage threshold is enforced in `pyproject.toml` (`fail_under`) — it is a hard gate, not an advisory.
+
+CI runs five jobs:
+
+- **Lint**: `ruff`;
+- **Type check**: `mypy`;
+- **Test**: Python 3.11 / 3.12 / 3.13 matrix with the 80% coverage gate;
 - **Smoke**: installs per the deployment docs and runs a real end-to-end flow, asserting via SQLite that parsing actually persisted — guarding against "exit code 0 but nothing happened";
 - **Deployment docs**: runs `setup.sh` and then the full test suite.
 

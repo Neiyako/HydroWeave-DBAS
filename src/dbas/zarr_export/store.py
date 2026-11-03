@@ -149,9 +149,12 @@ def plan_chunks(ds, target: str = "field_series",
     lon_n = size(lon) or 1
 
     def _elems() -> int:
+        # chunks 的构建保证：lat/lon 同时存在或同时缺席（见上方循环），
+        # 因此这里的 get 一定有值；显式写出默认值是为了让类型收窄。
         t_c = chunks.get(tim, 1) if tim else 1
         l_c = chunks.get(lev, level_full) if lev else 1
-        s_c = chunks.get(lat, lat_n) * chunks.get(lon, lon_n)
+        s_c = (chunks.get(lat, lat_n) if lat else lat_n) * \
+              (chunks.get(lon, lon_n) if lon else lon_n)
         return t_c * l_c * s_c
 
     # 1) 时间维优先退让

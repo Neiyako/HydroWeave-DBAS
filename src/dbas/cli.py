@@ -751,8 +751,8 @@ def cmd_fetch(args, cfg) -> int:
                             guard=ResourceGuard(res["max_rss_mb"], res["min_available_mb"]),
                             retry_delay_s=sched["retry_delay_s"],
                             stale_running_s=sched["stale_running_s"], resume=True)
-            summary = runner.run(types=["download"])
-            _print_summary(summary)
+            run_summary = runner.run(types=["download"])
+            _print_summary(run_summary)
         return 0
     print(f"未知 fetch 操作: {args.action}", file=sys.stderr)
     return 2

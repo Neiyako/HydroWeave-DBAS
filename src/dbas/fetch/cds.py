@@ -93,12 +93,13 @@ class FetchConfig:
         if area is not None:
             if len(area) != 4:
                 raise ConfigError(f"area 必须是 [北, 西, 南, 东] 四个值，当前: {area}")
-            n, w, s, e = (float(x) for x in area)
+            north, west, south, east = (float(x) for x in area)
             # CDS 约定 north > south；反了会导致 MARS 返回空数据（MarsNoDataError）
-            if n <= s:
+            if north <= south:
                 raise ConfigError(
-                    f"area 顺序为 [北, 西, 南, 东]，但 北({n}) ≤ 南({s})；"
-                    f"应写成 [{s}, {min(w, e)}, {n}, {max(w, e)}] 这类北>南的形式")
+                    f"area 顺序为 [北, 西, 南, 东]，但 北({north}) ≤ 南({south})；"
+                    f"应写成 [{south}, {min(west, east)}, {north}, "
+                    f"{max(west, east)}] 这类北>南的形式")
         return cls(
             dataset=str(raw["dataset"]),
             variables=[str(v) for v in raw["variables"]],

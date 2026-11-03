@@ -88,8 +88,11 @@ def _read_axis(ds, names: set[str], *, target: int = 200_000) -> dict[str, Any] 
             return None
         arr = np.ma.asarray(raw, dtype=np.float64)
         masked = int(np.ma.count_masked(arr))
-        vals = np.ma.filled(arr, np.nan).ravel()
-        vals = vals[np.isfinite(vals)]
+        # filled 的存根返回类型不够精确，显式转成 1 维 float 数组，
+        # 既保证无参 min/max 可用，也让类型检查通过。
+        filled = np.ma.filled(arr, np.nan)
+        flat_vals: np.ndarray = np.asarray(filled, dtype=np.float64).reshape(-1)
+        vals = flat_vals[np.isfinite(flat_vals)]
         if vals.size == 0:
             return {"name": name, "sig": None, "masked": masked,
                     "min": None, "max": None, "n": 0}
@@ -124,11 +127,12 @@ def _time_info(ds) -> dict[str, Any]:
         info["time_zero_count"] = int((vals == 0).sum())
         if vals.size > 1:
             info["time_non_increasing"] = int((np.diff(vals) <= 0).sum())
-        times = netCDF4.num2date(
+        decoded = netCDF4.num2date(
             vals, units=getattr(var, "units", ""),
             calendar=getattr(var, "calendar", "standard"),
             only_use_cftime_datetimes=False,
             only_use_python_datetimes=True)
+        times = list(decoded) if isinstance(decoded, np.ndarray) else [decoded]
         if len(times):
             info["time_min"] = times[0].replace(
                 tzinfo=UTC).isoformat()
@@ -201,16 +205,19 @@ def _read_sample(var, roles: dict[str, int], pos: str) -> dict[str, Any]:
     arr = np.ma.asarray(var[tuple(idx)], dtype=np.float64)
     flat = np.ma.filled(arr, np.nan).ravel()
     finite = flat[np.isfinite(flat)]
+    # finite 恒为一维（上游已 ravel），显式标注让 numpy 存根正确解析
+    # 无参 min/max；否则多维 ndarray 的存根会要求必须传 axis。
+    vals1d: np.ndarray = finite.reshape(-1)
     return {
-        "values": finite,
+        "values": vals1d,
         "n_total": int(flat.size),
-        "n_samples": int(finite.size),
-        "n_masked": int(flat.size - finite.size),
-        "min": float(finite.min()) if finite.size else None,
-        "max": float(finite.max()) if finite.size else None,
-        "mean": float(finite.mean()) if finite.size else None,
-        "std": float(finite.std()) if finite.size else None,
-        "constant": bool(finite.size and finite.min() == finite.max()),
+        "n_samples": int(vals1d.size),
+        "n_masked": int(flat.size - vals1d.size),
+        "min": float(vals1d.min()) if vals1d.size else None,
+        "max": float(vals1d.max()) if vals1d.size else None,
+        "mean": float(vals1d.mean()) if vals1d.size else None,
+        "std": float(vals1d.std()) if vals1d.size else None,
+        "constant": bool(vals1d.size and vals1d.min() == vals1d.max()),
     }
 
 

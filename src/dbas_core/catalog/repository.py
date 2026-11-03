@@ -74,7 +74,10 @@ class Catalog:
                      notes=excluded.notes""",
                 (volume_id, label or volume_id, str(root), str(root),
                  VOLUME_ONLINE, now, now, notes))
-        return self.get_volume(volume_id)
+        # 刚写入的卷必然存在；get_volume 的 Optional 在这里不成立
+        vol = self.get_volume(volume_id)
+        assert vol is not None, f"卷 {volume_id} 注册后读回失败"
+        return vol
 
     def get_volume(self, volume_id: str) -> dict[str, Any] | None:
         row = self.conn.execute(

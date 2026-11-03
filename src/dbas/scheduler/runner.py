@@ -78,7 +78,8 @@ class Runner:
         summary = RunSummary(run_id=uuid.uuid4().hex[:12])
         start = time.time()
         if self.resume:
-            stale = self.catalog.reclaim_stale_tasks(stale_s=self.stale_running_s)
+            stale = self.catalog.reclaim_stale_tasks(
+                stale_s=int(self.stale_running_s))
             if stale:
                 log.warning("回收 %d 个中断遗留的 running 任务: %s",
                             len(stale), ",".join(stale))

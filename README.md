@@ -192,7 +192,7 @@ HydroWeave-DBAS/
 │   ├── setup.sh                一键部署（幂等）
 │   ├── demo/                   合成数据卷生成器
 │   └── cds_*                   抓包诊断工具（可选）
-├── tests/                      90 个用例，全部合成数据、不联网
+├── tests/                      158 个用例，全部合成数据、不联网
 ├── docs/                       architecture / deployment / operations / zarr-layer / agent-prompts
 ├── data/                       运行产物：catalog.db、报告、备份、数组层（不入 Git）
 ├── pyproject.toml              打包、依赖、pytest 与 ruff 配置
@@ -236,16 +236,29 @@ SQLite catalog ── 扫描 / 解析 / 校验 / 画像 / QC
 ## 测试与持续集成
 
 ```bash
-.venv/bin/python -m pytest          # 90 passed
+.venv/bin/python -m pytest --cov    # 158 passed，覆盖率门槛 80%
 .venv/bin/python -m ruff check src tests scripts
+.venv/bin/python -m mypy            # 类型检查（仅 src）
 ```
 
 测试全部使用临时目录与合成 NetCDF，**不联网、不需要真实 ERA5 卷**，覆盖 CLI、扫描、调度、fetch 链路、在线备份与失败清理，以及数组层的分块、往返一致性、清单哈希、catalog 登记与 clobber 保护。
 
-CI 四个 job：
+质量门禁（CI 与本地同款，任一项不达标即失败）：
 
-- **Lint**：`ruff`，规则集刻意保守（只查缺陷不查风格），避免因格式偏好长期变红；
-- **Test**：Python 3.11 / 3.12 / 3.13 矩阵；
+| 检查 | 工具 | 门槛 | 当前实测 |
+|---|---|---|---|
+| 静态检查 | `ruff` | 0 问题 | 通过 |
+| 类型检查 | `mypy` | 0 错误（`src`，40 个文件） | 通过 |
+| 测试覆盖率 | `pytest-cov` | **≥ 80%**（含分支） | 81.6% |
+
+`ruff` 规则集刻意保守（只查缺陷不查风格），避免因格式偏好长期变红；
+覆盖率门槛写死在 `pyproject.toml` 的 `fail_under`，不是"建议值"。
+
+CI 五个 job：
+
+- **Lint**：`ruff`；
+- **Type check**：`mypy`；
+- **Test**：Python 3.11 / 3.12 / 3.13 矩阵，带 80% 覆盖率门槛；
 - **Smoke**：按部署文档安装后跑真实端到端，并用 SQLite 断言解析结果确实写入，防止"退出码 0 但什么都没做"的假绿；
 - **部署文档可执行性**：`setup.sh` 一键部署后跑全量测试。
 

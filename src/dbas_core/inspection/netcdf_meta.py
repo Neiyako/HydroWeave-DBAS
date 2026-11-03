@@ -65,7 +65,7 @@ def _decode_scalar(value) -> str | None:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     if isinstance(value, np.ndarray):
-        return ", ".join(_decode_scalar(v) for v in value.flat[:8])
+        return ", ".join(_decode_scalar(v) or "" for v in value.flat[:8])
     if isinstance(value, (np.floating, np.integer)):
         return value.item().__str__()
     return str(value)
@@ -95,8 +95,9 @@ def parse_netcdf_header(path) -> ParseResult:
 
     try:
         result.format = fmt_of(ds)
+        # 属性无值（None）时按空串落库，与报告渲染的空值语义一致
         result.global_attrs = {
-            k: _decode_scalar(ds.getncattr(k)) for k in ds.ncattrs()}
+            k: (_decode_scalar(ds.getncattr(k)) or "") for k in ds.ncattrs()}
         result.dimensions = [
             {"name": n, "size": len(d)}
             for n, d in ds.dimensions.items()]
@@ -149,12 +150,15 @@ def _extract_time(ds, result: ParseResult) -> None:
         if np.ma.isMaskedArray(vals) and vals.mask.all():
             result.warnings.append("时间坐标全部缺测，时间范围记为未知")
             return
-        times = netCDF4.num2date(
+        # num2date 对单元素输入会返回单个 datetime 而非数组，这里统一成
+        # 序列，后续索引与 len() 才不会因输入形状不同而走岔。
+        decoded = netCDF4.num2date(
             np.asarray(vals.compressed() if np.ma.isMaskedArray(vals) else vals),
             units=var.units if hasattr(var, "units") else "",
             calendar=getattr(var, "calendar", "standard"),
             only_use_cftime_datetimes=False,
             only_use_python_datetimes=True)
+        times = list(decoded) if isinstance(decoded, np.ndarray) else [decoded]
         if len(times) == 0:
             result.warnings.append("时间坐标解码为空")
             return

@@ -132,7 +132,7 @@ def profile_qc_report(catalog: Catalog, out_dir: Path, *,
     dataset_ids = [ds for ds in dataset_ids if ds in stats]
     total_profiled = sum(int(s.get("profiled") or 0) for s in stats.values())
     findings = _findings(catalog, dataset_ids, volume_id)
-    sev_counts = defaultdict(int)
+    sev_counts: defaultdict[str, int] = defaultdict(int)
     for f in findings:
         sev_counts[f["severity"]] += 1
 

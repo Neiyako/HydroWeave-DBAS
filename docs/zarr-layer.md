@@ -68,17 +68,17 @@ digest = sha256( 每行 "相对路径\tsize\tmtime_ns\tsha256\n" 按路径排序
 
 ```bash
 # 1) 预览：同一份数据在四种查询模式下会得到什么布局（不写数据）
-python -m dbas zarr plan --source path/to/ERA5_025dg_20240101_t.nc
+./bin/dbas zarr plan --source path/to/ERA5_025dg_20240101_t.nc
 
 # 2) 入队：可以同时给同一份数据建多种布局，互不覆盖
-python -m dbas zarr enqueue --volume disk1 --target field_series,point_series
+./bin/dbas zarr enqueue --volume disk1 --target field_series,point_series
 
 # 3) 执行：分批 / 预算 / 断点续跑，语义与 scan、subset 完全一致
-python -m dbas zarr run --budget 900 --batch-size 5
+./bin/dbas zarr run --budget 900 --batch-size 5
 
 # 4) 对账与查看
-python -m dbas zarr info
-python -m dbas zarr verify --store field_series/2024/ERA5_x.zarr
+./bin/dbas zarr info
+./bin/dbas zarr verify --store field_series/2024/ERA5_x.zarr
 ```
 
 产物路径：`data/arrays/<target>/<源相对路径去后缀>.zarr`。

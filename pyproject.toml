@@ -7,11 +7,11 @@ name = "dbas"
 version = "0.1.0"
 description = "DBAS: ERA5 科研数据管理与分析系统（Data Management and Analysis System）"
 requires-python = ">=3.11"
-# dbas-core 钉在已验证的 commit：默认分支变动不会悄悄改变科研口径。
-# 升级流程：本地验证 → 改这里的 commit → 重新 pip install -e . → 更新
-# configs/constraints-py313.txt 中的版本行。
+# 核心算法库 dbas_core 已内联进 src/dbas_core/（原为独立 git 仓库）。
+# 内联理由：原仓库不可访问会导致整个项目无法安装；内联后 clone 即可装，
+# 也避免上游默认分支变动悄悄改变科研口径。升级即改本仓源码 + 跑测试。
 dependencies = [
-    "dbas-core @ git+https://github.com/Neiyako/dbas-core.git@46b32f45de90bb9442df9c04e53c67b7c57b1c3a",
+    "cftime>=1.6",
     "netCDF4>=1.7",
     "numpy>=1.26",
     "pandas>=2.1",

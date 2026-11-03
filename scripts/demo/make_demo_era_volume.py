@@ -73,9 +73,22 @@ def make_file(path: Path, *, month: int, nt: int, lat_desc: bool,
     return path
 
 
-def main() -> None:
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data/era_like_volume")
-    n_months = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+def main() -> int:
+    args = sys.argv[1:]
+    if any(a in ("-h", "--help") for a in args):
+        print(__doc__.strip())
+        return 0
+    # 以 "--" 开头的参数一律拒绝：否则会被当成目录名，在当前目录建出 ./--help
+    for a in args:
+        if a.startswith("-"):
+            print(f"未知参数: {a}\n\n{__doc__.strip()}", file=sys.stderr)
+            return 2
+    root = Path(args[0]) if len(args) > 0 else Path("data/era_like_volume")
+    try:
+        n_months = int(args[1]) if len(args) > 1 else 3
+    except ValueError:
+        print(f"月份数必须是整数: {args[1]!r}", file=sys.stderr)
+        return 2
     specs = [dict(lat_desc=False, lon_360=False),
              dict(lat_desc=True, lon_360=False),
              dict(lat_desc=True, lon_360=True)]
@@ -87,7 +100,8 @@ def main() -> None:
         print(f"  {p}  (lat {'降' if sp['lat_desc'] else '升'}序, "
               f"lon {'0-360' if sp['lon_360'] else '-180-180'})")
     print(f"已生成 {n_months} 个类 ERA5 文件于 {root}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

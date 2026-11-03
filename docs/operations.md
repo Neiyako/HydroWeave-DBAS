@@ -4,7 +4,7 @@
 
 - [ ] 确认原始数据盘为只读习惯使用：DBAS 自身从不写原始卷，但不要把
       `data/` 目录建在原始数据盘上。
-- [ ] `python -m dbas status` 确认指向预期项目根。
+- [ ] `./bin/dbas status` 确认指向预期项目根。
 - [ ] 注册卷时用 `--id` 显式指定稳定 ID（跨重挂载不变）。
 - [ ] 第一次扫描先 `--mode inventory`（只盘点，不解析），确认文件数符合预期。
 - [ ] 用 `--budget 60 --batch-size 20` 小预算试跑元数据解析，观察输出。
@@ -41,10 +41,10 @@
 
 ## 数据库维护
 
-- 备份：`python -m dbas db backup`（SQLite 在线备份 API，可在使用中执行）。
+- 备份：`./bin/dbas db backup`（SQLite 在线备份 API，可在使用中执行）。
   备份先写同目录 `.part`，对副本跑 `integrity_check` + `foreign_key_check`，
   通过后才原子替换目标文件；失败会删除临时文件、保留旧备份，不会留下半截文件。
-- 检查：`python -m dbas db check`（integrity_check + foreign_key_check）。
+- 检查：`./bin/dbas db check`（integrity_check + foreign_key_check）。
 - 恢复：停掉正在运行的 `dbas` 进程 → 把 `data/backups/catalog_<时间戳>.db`
   拷回 `data/catalog.db`（连同删除同目录 `-wal`/`-shm`）→ `dbas status` 确认。
 - 重建：`db backup` → 移走 `data/catalog.db` → 重新注册卷并扫描。
@@ -52,9 +52,9 @@
 
 ## 内容画像与 QC
 
-- 先小批量试跑：`python -m dbas profile --volume <卷> --limit 20`。
+- 先小批量试跑：`./bin/dbas profile --volume <卷> --limit 20`。
   画像会抽样读首/末时次，不读完整文件；budget/batch 与扫描一致，可断点续跑。
-- 全量画像：`python -m dbas profile --volume <卷> --batch-size 500 --budget 900`，
+- 全量画像：`./bin/dbas profile --volume <卷> --batch-size 500 --budget 900`，
   重复执行直到 `tasks list --status pending` 为空；已完成文件的 dedup 会自动跳过。
 - `dataset list` 查看数据集分组与画像进度；`dataset assign --volume <卷>`
   只做分组，不读数据。
@@ -71,10 +71,10 @@ Hydroweave 实验仓里，它只读本仓 catalog：
 
 ```bash
 # 1. 先在 DBAS 侧把卷和数据集索引好（本仓）
-dbas volume register /Volumes/Untitled --id era5hd
-dbas scan --volume era5hd --mode inventory --enqueue-metadata
-dbas scan --volume era5hd --mode metadata
-dbas dataset assign --volume era5hd
+./bin/dbas volume register /Volumes/Untitled --id era5hd
+./bin/dbas scan --volume era5hd --mode inventory --enqueue-metadata
+./bin/dbas scan --volume era5hd --mode metadata
+./bin/dbas dataset assign --volume era5hd
 
 # 2. 再到实验仓按 run-id 计算与制图（Hydroweave 仓）
 #    cd ~/Desktop/Hydroweave && PYTHONPATH=src:. .venv/bin/python \
@@ -84,7 +84,7 @@ dbas dataset assign --volume era5hd
 约定：
 
 - 实验仓**只读** catalog，不写回、不改原始卷；本仓不感知实验产物；
-- 需要比特级归档证据时，先在本仓 `dbas checksum --volume era5hd` 分批生成校验和；
+- 需要比特级归档证据时，先在本仓 `./bin/dbas checksum --volume era5hd` 分批生成校验和；
 - 实验产物、运行清单与验收报告由实验仓自己管理，不进本仓 `data/`。
 
 ## 已声明的未实现项

@@ -249,7 +249,10 @@ src/dbas/
 ├── reports/         Markdown 报告生成
 └── cli.py           统一命令入口
 experiments/         配置驱动的可复现实验层（tp_cloud_water = 云水代理 EDA）
-scripts/             兼容入口薄包装；scripts/demo/ = 合成数据与 fixture 生成器
+scripts/             按用途分三类，见 scripts/README.md
+├── analysis/       实验入口薄包装（转发到 experiments/）
+├── demo/           合成数据卷与 fixture 生成器
+└── dev/            维护脚本（真实卷独立验收）
 tests/               合成数据测试（默认不联网、不依赖真实 ERA5 卷）
 docs/                架构说明、运行手册与例图
 configs/             系统配置、fetch 请求模板与依赖约束文件

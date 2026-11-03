@@ -74,6 +74,9 @@ enqueue(dedup_key) → pending → claim(原子 UPDATE, attempts+1) → running
 
 - `experiments/<name>/config.yaml` 声明 catalog、`volume_id`、`dataset_id`、
   年份、区域、时次、物理阈值与输出目录；机器专属路径只出现在配置里。
+- `scripts/` 只留可执行入口，按用途分三类：`analysis/`（实验命令行包装，
+  转发到 `experiments/`）、`demo/`（合成数据与 fixture）、`dev/`（独立验收等
+  维护脚本）。约定见 `scripts/README.md`，业务逻辑一律不写进脚本。
 - `src/dbas/repro/manifest.py` 提供 `config_hash`（规范化 JSON 的 SHA-256
   前 16 位）、`input_fingerprint`（catalog 的卷 ID + 相对路径 + 大小 + mtime，
   排序后哈希，不扫 2TB 内容）、`git_revision`/`package_versions` 环境快照，

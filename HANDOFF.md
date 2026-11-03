@@ -13,7 +13,7 @@
 | 改动 | 证据 |
 |---|---|
 | `experiments/tp_cloud_water/plot.py` 完成 run-dir 重构 | 读 `yearly/` + `tables/`，写 `figures/` + `summary/`，产物指纹登记回 manifest；缺月份不再画空面板；basemap 离线自动跳过 |
-| 旧 `scripts/tp_cloud_water_{eda,plot}.py` 改为薄包装 | `env -u PYTHONPATH .venv/bin/python scripts/tp_cloud_water_eda.py --help` 可用 |
+| 旧 `scripts/analysis/tp_cloud_water_{eda,plot}.py` 改为薄包装 | `env -u PYTHONPATH .venv/bin/python scripts/tp_cloud_water_eda.py --help` 可用 |
 | 新增 `scripts/demo/make_tp_cloud_water_fixture.py` | 合成 mini catalog + 37 层 q/t（地形以下等值填充）+ mask + config，不依赖外接盘 |
 | `tests/test_tp_cloud_water_experiment.py` | fixture→EDA→manifest→resume→plot 全链路 + 配置不一致拒绝 + 缺 mask 明确失败 |
 | `tests/test_repro_manifest.py`、`tests/test_backup.py`、`tests/test_scheduler.py` 追加 | manifest 哈希/指纹/原子写、备份校验失败清理、`stale_running_s` 不误回收 |

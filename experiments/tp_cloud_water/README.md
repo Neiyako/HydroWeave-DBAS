@@ -40,8 +40,8 @@ PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
 旧命令仍可用（薄包装，参数相同）：
 
 ```bash
-.venv/bin/python scripts/tp_cloud_water_eda.py --years 2010 2011
-.venv/bin/python scripts/tp_cloud_water_plot.py
+.venv/bin/python scripts/analysis/tp_cloud_water_eda.py --years 2010 2011
+.venv/bin/python scripts/analysis/tp_cloud_water_plot.py
 ```
 
 `--run-id` 省略时取 `run-<配置哈希>`，EDA 与制图必须用同一个 run-id。

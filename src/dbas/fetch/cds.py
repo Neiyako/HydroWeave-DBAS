@@ -42,6 +42,8 @@ class FetchConfig:
     volume_id: str = "downloads"
     product_type: str | None = None
     extra_request: dict[str, Any] = field(default_factory=dict)
+    split_by: str | None = None              # None | "day" | "time"：把月请求按该维度拆成小请求
+    chunk_days: int = 1                      # split_by=day 时每批天数；按 CDS 成本上限取 5
 
     @classmethod
     def from_yaml(cls, path: Path) -> "FetchConfig":
@@ -71,10 +73,19 @@ class FetchConfig:
             target_dir=str(raw.get("target_dir", "data/downloads")),
             volume_id=str(raw.get("volume_id", "downloads")),
             product_type=raw.get("product_type"),
-            extra_request=raw.get("extra_request") or {})
+            extra_request=raw.get("extra_request") or {},
+            split_by=(str(raw["split_by"]).lower() if raw.get("split_by") else None),
+            chunk_days=int(raw.get("chunk_days", 1) or 1))
 
     def build_requests(self) -> list[dict[str, Any]]:
-        """每个 (变量集 × 年 × 月) 一个最小请求，失败重试代价小。"""
+        """每个 (变量集 × 年 × 月) 一个最小请求，失败重试代价小。
+
+        `split_by: day` 时按 `chunk_days`（默认 1）把该月请求切成若干批：
+        CDS 单请求有成本上限（`estimate_costs` 返回 `cost/limit`，超限即 403）。
+        实测 clwc/ciwc × 37 层 × 24 时次：1 天 = 10656，5 天 = 53280（占限额 88.8%），
+        6 天 = 63936 就超限。因此默认按 5 天打包，而不是逐日提交——
+        请求数从 744 降到 150，队列压力降 80%，单批仍在安全水位内。
+        """
         reqs = []
         for year in self.years:
             for month in self.months:
@@ -88,7 +99,23 @@ class FetchConfig:
                     req["product_type"] = self.product_type
                 if self.area:
                     req["area"] = self.area
-                reqs.append({"year": year, "month": month, "request": req})
+                if self.split_by == "day" and isinstance(req.get("day"), list) and len(req["day"]) > 1:
+                    days = req["day"]
+                    size = max(1, int(self.chunk_days or 1))
+                    for start in range(0, len(days), size):
+                        chunk = days[start:start + size]
+                        part = dict(req, day=chunk)
+                        suffix = f"d{chunk[0]}" if len(chunk) == 1 else f"d{chunk[0]}-{chunk[-1]}"
+                        reqs.append({"year": year, "month": month,
+                                     "day": str(chunk[0]) if len(chunk) == 1 else None,
+                                     "suffix": suffix, "request": part})
+                elif self.split_by == "time" and isinstance(req.get("time"), list) and len(req["time"]) > 1:
+                    for t in req["time"]:
+                        part = dict(req, time=[t])
+                        reqs.append({"year": year, "month": month, "suffix": f"t{t.split(':')[0]}",
+                                     "request": part})
+                else:
+                    reqs.append({"year": year, "month": month, "request": req})
         return reqs
 
 
@@ -105,10 +132,11 @@ def enqueue_fetch_tasks(catalog: Catalog, cfg: FetchConfig) -> tuple[int, int]:
     created = skipped = 0
     for req_meta in cfg.build_requests():
         dedup = request_dedup_key(cfg, req_meta)
+        suffix = req_meta.get("suffix", "")
+        stem = f"{req_meta['year']}{req_meta['month']}" + (f"_{suffix}" if suffix else "")
         target_rel = (
-            f"{cfg.dataset}/{req_meta['year']}{req_meta['month']}"
-            f"_{cfg.variables[0]}.nc" if len(cfg.variables) == 1
-            else f"{cfg.dataset}/{req_meta['year']}{req_meta['month']}_multi.nc")
+            f"{cfg.dataset}/{stem}_{cfg.variables[0]}.nc" if len(cfg.variables) == 1
+            else f"{cfg.dataset}/{stem}_multi.nc")
         _, ok = catalog.enqueue_task(
             "download",
             {"dataset": cfg.dataset, "request": req_meta["request"],
@@ -129,7 +157,8 @@ def ensure_download_volume(catalog: Catalog, cfg: FetchConfig, project_root: Pat
         label="ERA5 API 下载目录", notes="由 dbas fetch 创建")
 
 
-def download_one(catalog: Catalog, params: dict, project_root: Path) -> dict:
+def download_one(catalog: Catalog, params: dict, project_root: Path,
+                 capture_dir: Path | None = None, task_id: str | None = None) -> dict:
     """执行单个下载任务（由 Runner 调度）。"""
     try:
         import cdsapi
@@ -145,6 +174,10 @@ def download_one(catalog: Catalog, params: dict, project_root: Path) -> dict:
         client = CLIENT_FACTORY()
     else:
         client = cdsapi.Client(quiet=True, wait_until_complete=True, timeout=3600)
+    if capture_dir is not None:
+        from dbas.fetch.capture import CaptureConfig, JsonlWriter, ObservedCdsClient
+        client = ObservedCdsClient(client, JsonlWriter(CaptureConfig(Path(capture_dir))),
+                                  task_id=task_id)
     try:
         client.retrieve(params["dataset"], params["request"], str(part))
     except Exception as e:  # noqa: BLE001 cdsapi 异常类型多，统一转 FetchError

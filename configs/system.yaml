@@ -20,8 +20,9 @@ scan:
     - ".fseventsd"
 
 scheduler:
-  max_attempts: 3
-  retry_delay_s: 5
+  # CDS 下载常有 13kB/s 慢流与 IncompleteRead 断连，重试次数给足；长期任务可反复 run 续跑
+  max_attempts: 6
+  retry_delay_s: 60
   stale_running_s: 600
 
 profile:

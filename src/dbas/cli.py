@@ -513,14 +513,43 @@ def cmd_subset(args, cfg) -> int:
 
 def cmd_fetch(args, cfg) -> int:
     from dbas.fetch.cds import FetchConfig, download_one, enqueue_fetch_tasks, ensure_download_volume
+    if args.action == "capture":
+        from dbas.fetch.capture import CaptureConfig
+        fcfg = FetchConfig.from_yaml(Path(args.config).expanduser())
+        output = Path(args.output).expanduser()
+        output.mkdir(parents=True, exist_ok=True)
+        capture = CaptureConfig(output, max_body_bytes=args.max_body_bytes)
+        manifest = {
+            "capture_id": capture.capture_id,
+            "output": str(output),
+            "dataset": fcfg.dataset,
+            "request_count": len(fcfg.build_requests()),
+            "proxy": {"host": args.host, "port": args.port},
+            "network_started": False,
+            "credentials": "resolved by cdsapi at runtime; not recorded",
+        }
+        (output / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps(manifest, ensure_ascii=False))
+        return 0
+    if args.action == "report":
+        from dbas.fetch.capture_report import write_report
+        md, summary = write_report(Path(args.capture_dir).expanduser(),
+                                   Path(args.output).expanduser())
+        print(json.dumps({"report": str(md), "summary": str(summary)}, ensure_ascii=False))
+        return 0
     if args.action == "plan":
         fcfg = FetchConfig.from_yaml(Path(args.config).expanduser())
         reqs = fcfg.build_requests()
         print(f"数据集: {fcfg.dataset}")
         print(f"变量: {fcfg.variables}")
-        print(f"计划请求数: {len(reqs)}（每年×每月一个最小请求）")
+        print(f"计划请求数: {len(reqs)}"
+              + (f"（split_by={fcfg.split_by}，每块 {fcfg.chunk_days} 天）"
+                 if fcfg.split_by else "（每年×每月一个请求）"))
         for r in reqs:
-            print(f"  - {r['year']}-{r['month']} {json.dumps(r['request'], ensure_ascii=False)[:120]}")
+            tag = f"[{r['suffix']}] " if r.get("suffix") else ""
+            print(f"  - {r['year']}-{r['month']} {tag}"
+                  f"{json.dumps(r['request'], ensure_ascii=False)[:110]}")
         return 0
     if args.action == "enqueue":
         with _open_catalog(cfg) as cat:
@@ -537,7 +566,10 @@ def cmd_fetch(args, cfg) -> int:
 
             def handler(params, catalog, ctx):
                 ctx.heartbeat()
-                return download_one(catalog, params, cfg.root)
+                return download_one(catalog, params, cfg.root,
+                                    capture_dir=getattr(args, "capture_dir", None),
+                                    task_id=str(getattr(ctx, "_task_id", "") or "")
+                                    if getattr(args, "capture_dir", None) else None)
 
             sched = cfg.section("scheduler")
             res = cfg.section("resource")
@@ -665,6 +697,18 @@ def build_parser() -> argparse.ArgumentParser:
         f.add_argument("--config", required=True, help="fetch 配置 YAML 路径")
         f.add_argument("--budget", type=float, default=None)
         f.add_argument("--batch-size", type=int, default=None)
+        if name == "run":
+            f.add_argument("--capture-dir", default=None,
+                           help="应用层捕获输出目录（可选）")
+    cap = fsub.add_parser("capture", help="创建脱敏抓包会话清单（不联网）")
+    cap.add_argument("--config", required=True, help="fetch 配置 YAML 路径")
+    cap.add_argument("--output", required=True, help="捕获输出目录")
+    cap.add_argument("--host", default="cds.climate.copernicus.eu")
+    cap.add_argument("--port", type=int, default=443)
+    cap.add_argument("--max-body-bytes", type=int, default=16384)
+    rep = fsub.add_parser("report", help="离线分析捕获事件")
+    rep.add_argument("--capture-dir", required=True)
+    rep.add_argument("--output", default="data/reports")
     return p
 
 

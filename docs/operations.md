@@ -137,3 +137,33 @@ CDS 服务器排队时间不可控，fetch 不设硬超时，中断后重跑即�
   反复执行；在这之前，盘上数据出现静默损坏是无法察觉的。
 - 数据集自动识别（`dataset assign`）当前只覆盖 netCDF，`DATA/` 里 4 万余个
   `.gz`/`.tif` 等条目 `dataset_id` 仍为空，`dataset list` 因此低报盘的构成。
+
+## CDS 抓包（应用层 + 代理层）
+
+三层证据分开判定，缺层就写 `INSUFFICIENT_EVIDENCE`，不用“没抓到”推断“服务没返回”：
+
+| 层 | 触发方式 | 产物 |
+|---|---|---|
+| 应用层 | `./bin/dbas fetch run --config ... --capture-dir DIR` | `DIR/events.jsonl`（application_request/response/error） |
+| 代理层 | `scripts/cds_capture_proxy.py` + `HTTPS_PROXY` | `DIR/events.jsonl`（request/response，含状态码与路径）+ `proxy_manifest.json` |
+| 连接层 | `scripts/cds_packet_capture.sh`（tcpdump，只记字节不解析 TLS） | `pcap_manifest.json` |
+
+离线出报告：`./bin/dbas fetch report --capture-dir DIR --output data/reports`。
+
+**2026-11-03 实测要点（都踩过，写下来避免重复）**：
+
+- 代理必须指向**当前** CDS 主机 `cds.climate.copernicus.eu`；旧值
+  `api.ecmwf.int` 是上一代 REST 端点，命中不了任何流量。
+- 让 `cdsapi` 经 mitmproxy 走全链路，需要三件事同时成立：`HTTPS_PROXY`
+  指向本地代理、`REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` 指向「certifi + mitm CA」
+  的合并证书、`no_proxy` 不含该主机。`cdsapi.Client(verify=...)` 单个参数不够，
+  它内部的 `ecmwf.datastores` 客户端会自建 session，仍需环境变量兜底。
+- 代理用 `kill`/`pkill` 停止时是 SIGTERM，`asyncio.run` 不会走 `finally`；
+  脚本已加信号处理并**每写一条事件就刷新** `proxy_manifest.json` 的 `stats`，
+  否则报告拿不到“代理是否真的抓到流量”。
+- 单请求规模过大时 CDS 直接返回 `403 cost limits exceeded`（实测 31 天 ×
+  24 时次 × 37 层，21/21 全失败，耗时仅 0.5–3 s）。全量配置已改用
+  `split_by: day` 逐日拆分（744 个请求），单请求降到 1/31。
+- 逐日拆分后的请求是**慢**而不是卡死：文件会持续增长（实测 1→2→3→4→6 MB），
+  过程中 `%CPU` 可能为 0、`lsof` 也不一定有活跃 TCP。判断进度看**文件大小变化**，
+  不要因为短时无增长就杀进程——那样只会留下打不开的半截 nc。

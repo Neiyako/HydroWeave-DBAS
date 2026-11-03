@@ -288,16 +288,24 @@ configs/             系统配置、fetch 请求模板与依赖约束文件
 
 ```bash
 .venv/bin/python -m pip install -e '.[dev,eda]'
-.venv/bin/python -m pytest                                  # 全量
+.venv/bin/python -m pytest                                  # 全量（无外接盘时 real 组自动 skip）
 .venv/bin/python -m pytest tests/test_cli.py                # 单组
 .venv/bin/python -m pytest tests/test_scanner.py -k incremental
+
+# 真实卷测试：需要 /Volumes/Untitled 在线（否则自动 skip）
+.venv/bin/python -m pytest -m real -q
+# 真实卷独立验收报告：catalog/盘核对、季节覆盖、物理区间、单柱独立重算、新旧回归
+.venv/bin/python scripts/dev/validate_real_eda.py
+# → data/analysis/tp_cloud_water/validation/real_eda_check.md（PASS/CONDITIONAL_PASS/FAIL）
 ```
 
 覆盖范围：CLI 全命令、扫描器各模式、任务调度（认领/预算/重试/陈旧回收与
 `stale_running_s` 语义）、fetch 管理链路、manifest 哈希/输入指纹/原子写、
 SQLite 在线备份与校验失败清理、dbas-core 的数据集识别/画像/QC/subset/云水代理
 公式，以及云水代理实验的「合成 fixture → EDA → manifest → 断点续跑 → 制图」
-全链路（`tests/test_tp_cloud_water_experiment.py`）。
+全链路（`tests/test_tp_cloud_water_experiment.py`）。真实卷上另有 7 个
+`-m real` 用例：catalog 与盘上文件一致、736 天季节覆盖、单日物理区间、
+单柱 PW 独立重算、真实 run 产物与 manifest 回归（`test_tp_cloud_water_real.py`）。
 
 ---
 

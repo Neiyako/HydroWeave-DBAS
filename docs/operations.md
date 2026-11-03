@@ -83,6 +83,9 @@ PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
   「不一致」并拒绝续跑；换 `--run-id` 或显式 `--force`。
 - 检查完成状态：看 `manifest.json` 的 `status`/`completed_years`/
   `failed_dates`，以及 `summary/tp_eda_summary.md`。
+- 真实卷验收：`.venv/bin/python scripts/dev/validate_real_eda.py`，输出
+  `data/analysis/tp_cloud_water/validation/real_eda_check.md`（六条硬标准 +
+  PASS/CONDITIONAL_PASS/FAIL）。
 - 没有外接盘时可用合成 fixture 验证链路（不联网、不花费用）：
 
 ```bash

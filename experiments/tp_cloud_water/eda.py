@@ -128,8 +128,11 @@ def compute_day(q, t):
     valid = np.isfinite(rh) & band[None, :, None, None]
     cfrac = np.where(valid.any(1), ((rh >= RH_CLOUD) & valid).sum(1)
                      / np.maximum(valid.sum(1), 1), np.nan)
+    finite = np.isfinite(rh)
+    count = finite.sum(axis=(0, 3))
     with np.errstate(divide="ignore", invalid="ignore"):
-        rh_zon = np.nanmean(rh, axis=(0, 3))
+        rh_zon = np.where(count > 0, np.nansum(rh, axis=(0, 3)) / np.maximum(count, 1),
+                          np.nan)
     return {"pw": pw.mean(0).astype("float32"), "rh500": rh500.mean(0).astype("float32"),
             "cfrac": cfrac.mean(0).astype("float32"), "rh_z": rh_zon.astype("float32"),
             "surf_p": surf_p.mean(0).astype("float32"), "subsurf": float(1.0 - ok.mean()),

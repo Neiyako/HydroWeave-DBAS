@@ -85,6 +85,26 @@ data/analysis/tp_cloud_water/runs/<run_id>/
   失败明细在 `tables/tp_read_problems_<year>.csv`（manifest 的 `failed_dates`
   汇总）。要重算这一年并重试失败日期，用 `--force`；否则续跑会跳过它。
 
+## 真实数据测试与验收
+
+合成 fixture 保证链路可跑，真实卷才是数据口径的证据。两组入口：
+
+```bash
+# 真实卷 pytest（/Volumes/Untitled 不在线时自动 skip）
+.venv/bin/python -m pytest -m real -q
+
+# 独立验收报告（不经过实验代码重算，避免自证）
+.venv/bin/python scripts/dev/validate_real_eda.py
+```
+
+`scripts/dev/validate_real_eda.py` 的六条硬标准（执行前固定在脚本
+`STANDARDS` 里）：catalog 与盘上文件一致；2010–2013 每年 5–10 月 184 天且
+q/t 成对；12 个抽样日物理量在合理量级；4 个单柱 PW 独立重算相对误差 ≤0.5%；
+新 run 与旧扁平实现产物逐比特一致；manifest/736 行逐日表/8 张图/摘要齐全。
+报告写到 `data/analysis/tp_cloud_water/validation/real_eda_check.md`，判定只有
+PASS / CONDITIONAL_PASS / FAIL。2026-11-03 实测：六项全 PASS，独立重算
+相对误差 0.0000%，4 年 × 4 变量 max abs diff = 0。
+
 ## 复现边界
 
 `manifest.json` 的输入指纹是 catalog 的逻辑指纹，不是全量 SHA-256；需要比特级

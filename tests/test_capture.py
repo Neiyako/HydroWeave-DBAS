@@ -112,3 +112,110 @@ def test_chunk_days_default_is_one_day():
                       extra_request={"day": ["01", "02"]}, split_by="day")
     assert cfg.chunk_days == 1
     assert len(cfg.build_requests()) == 2
+
+
+# ---- 两段式抓包：submit / download 拆开观测 ----
+
+class _FakeRemote:
+    """模拟 cdsapi 的 Remote：带 request_id 与 content_length。"""
+
+    def __init__(self, target_content=b"nc", request_id="req-123", content_length=2):
+        self.request_id = request_id
+        self.content_length = content_length
+        self._content = target_content
+        self.downloaded_to = None
+
+    def download(self, target):
+        Path(target).write_bytes(self._content)
+        self.downloaded_to = target
+        return target
+
+
+class _FakeSubmitClient:
+    """支持「只提交」语义的假客户端。"""
+
+    def __init__(self, remote=None):
+        self.remote = remote or _FakeRemote()
+        self.submitted = []
+
+    def retrieve(self, dataset, request, target=None):
+        if target is None:
+            self.submitted.append((dataset, request))
+            return self.remote
+        raise AssertionError("应走两段式，不该直接给 target")
+
+
+def test_submit_and_download_are_separate_events(tmp_path):
+    config = CaptureConfig(tmp_path)
+    client = ObservedCdsClient(_FakeSubmitClient(), JsonlWriter(config), task_id="t-1")
+    target = tmp_path / "x.part"
+    client.retrieve("ds", {"variable": ["clwc"]}, str(target))
+
+    rows = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    stages = [(r["event"], r["stage"]) for r in rows]
+    # 排队与传输分开记录，才能判断慢在队列还是链路
+    assert ("application_request", "submit") in stages
+    assert ("application_response", "submit") in stages
+    assert ("application_response", "download") in stages
+
+    submit_resp = next(r for r in rows
+                       if r["event"] == "application_response" and r["stage"] == "submit")
+    assert submit_resp["request_id"] == "req-123"
+    assert submit_resp["content_length"] == 2
+
+    dl = next(r for r in rows
+              if r["event"] == "application_response" and r["stage"] == "download")
+    assert dl["target_bytes"] == 2
+    assert dl["size_matches"] is True
+    assert dl["throughput_bps"] > 0
+    # request_id 被记下来，供中断后复用服务端任务
+    assert client.last_request_id == "req-123"
+
+
+def test_truncated_download_flags_size_mismatch(tmp_path):
+    """Actual < content_length 时要显式标出：netCDF 截断后往往仍能打开。"""
+    config = CaptureConfig(tmp_path)
+    remote = _FakeRemote(target_content=b"nc", content_length=999)
+    client = ObservedCdsClient(_FakeSubmitClient(remote), JsonlWriter(config), task_id="t-2")
+    client.retrieve("ds", {"variable": ["clwc"]}, str(tmp_path / "y.part"))
+    rows = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    dl = next(r for r in rows
+              if r["event"] == "application_response" and r["stage"] == "download")
+    assert dl["size_matches"] is False
+
+
+def test_submit_error_records_error_event(tmp_path):
+    """失败路径也要留证据，且异常必须原样抛出，不能被吞。"""
+    class BoomClient:
+        def retrieve(self, dataset, request, target=None):
+            if target is None:
+                raise RuntimeError("queue exploded")
+            raise AssertionError("unreachable")
+
+    config = CaptureConfig(tmp_path)
+    client = ObservedCdsClient(BoomClient(), JsonlWriter(config), task_id="t-3")
+    import pytest
+    with pytest.raises(RuntimeError):
+        client.retrieve("ds", {"variable": ["clwc"]}, str(tmp_path / "z.part"))
+    rows = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    err = next(r for r in rows if r["event"] == "application_error")
+    assert err["stage"] == "submit"
+    assert err["error_type"] == "RuntimeError"
+    assert "duration_ms" in err
+
+
+def test_legacy_client_falls_back_to_single_stage(tmp_path):
+    """只接受三参数的老式客户端：退回单段路径，事件仍成对。"""
+    class LegacyOnly:
+        def retrieve(self, dataset, request, target):
+            Path(target).write_bytes(b"nc")
+            return {"ok": True}
+
+    config = CaptureConfig(tmp_path)
+    client = ObservedCdsClient(LegacyOnly(), JsonlWriter(config), task_id="t-4")
+    client.retrieve("ds", {"variable": ["clwc"]}, str(tmp_path / "w.part"))
+    rows = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    events = [r["event"] for r in rows]
+    assert events.count("application_request") == 1
+    assert events.count("application_response") == 1
+    assert client.last_request_id is None     # 老路径拿不到 request_id

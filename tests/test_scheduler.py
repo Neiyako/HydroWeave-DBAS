@@ -230,3 +230,42 @@ def test_stale_running_s_controls_reclaim(tmp_path):
                retry_delay_s=0, stale_running_s=60).run(types=["t"])
     assert s.succeeded == 1
     assert cat.get_task(tid)["status"] == "succeeded"
+
+
+# ---- 错误分级：永久失败不消耗重试次数 ----
+
+class PermanentHandler:
+    """抛出一个带 permanent 标记的错误。"""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, params, catalog, ctx):
+        self.calls += 1
+        from dbas.fetch.cds import FetchPermanentError
+        raise FetchPermanentError("403 cost limits exceeded")
+
+
+def test_permanent_error_fails_without_retry(tmp_path):
+    """永久失败：一次就落 failed，不该进 retry_wait 白等 6 轮。"""
+    cat = _mk_cat(tmp_path)
+    cat.enqueue_task("t", {"x": 1}, dedup_key="p1", max_attempts=6)
+    h = PermanentHandler()
+    runner = Runner(cat, {"t": h}, budget_s=60, batch_limit=10, retry_delay_s=5)
+    s = runner.run(types=["t"])
+    assert s.failed == 1
+    assert s.skipped_retry == 0          # 没有排进重试队列
+    assert h.calls == 1                  # 只执行了一次
+    task = cat.list_tasks()[0]
+    assert task["status"] == "failed"
+    assert "cost limit" in (task["last_error"] or "")
+
+
+def test_transient_error_still_retries(tmp_path):
+    """对照：普通异常仍走原有的重试路径。"""
+    cat = _mk_cat(tmp_path)
+    cat.enqueue_task("t", {"x": 1}, dedup_key="t1", max_attempts=6)
+    h = FlakyHandler(fail_times=1)
+    runner = Runner(cat, {"t": h}, budget_s=60, batch_limit=10, retry_delay_s=5)
+    s = runner.run(types=["t"])
+    assert s.skipped_retry == 1 and s.failed == 0

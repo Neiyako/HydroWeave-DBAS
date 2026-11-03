@@ -118,7 +118,15 @@ class Runner:
             except Exception as e:  # noqa: BLE001 单任务失败隔离
                 msg = f"{type(e).__name__}: {e}"
                 summary.errors.append(f"{task['task_id']}: {msg}")
-                if task["attempts"] >= task["max_attempts"]:
+                if getattr(e, "permanent", False):
+                    # 永久失败：重试必然以同样方式失败，直接落 failed 让人看到真因。
+                    # 用属性而非 import 判断，避免 scheduler 反向依赖 fetch 层。
+                    self.catalog.finish_task(
+                        task["task_id"], "failed", error=msg,
+                        attempt_id=attempt_id)
+                    summary.failed += 1
+                    log.error("任务 %s 永久失败，不重试: %s", task["task_id"], msg)
+                elif task["attempts"] >= task["max_attempts"]:
                     self.catalog.finish_task(
                         task["task_id"], "failed", error=msg,
                         attempt_id=attempt_id)

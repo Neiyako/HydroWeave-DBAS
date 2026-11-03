@@ -155,6 +155,17 @@ dbas fetch run --config configs/fetch/era5_demo.yaml
 
 因此下载文件与外接硬盘文件共享同一套 `inventory → metadata → verify → checksum → report` 管理流程。抓包分析为可选的脱敏诊断工具，详见 `configs/fetch/` 和 `scripts/`。
 
+### 下载可靠性约定
+
+借鉴 `ecmwf/cdsapi`、`cdsswarm` 等既有实现后，fetch 层固化了四条约定：
+
+- **去重键按语义归一化**：`"year": "2024"` 与 `["2024"]`、`["01","02"]` 与 `["02","01"]` 折叠成同一个 `dedup_key`，避免同一份数据被重复入队；`area` 是位置参数，保持原序不参与排序。
+- **错误分级**：成本超限（403）、变量名写错、未接受数据集条款属于**永久失败**，直接落 `failed` 并保留原因，不消耗重试次数；网络抖动、5xx 仍按原策略重试。
+- **记录 `cds_request_id`**：任务结果里带回 CDS 服务端请求 ID，进程中断后可凭它取回已排队的任务，不必重排。
+- **抓包分两段**：`submit`（排队，记 `request_id` 与 `content_length`）与 `download`（传输，记实测速率与字节数）分别记录，能区分"队列慢"和"链路慢"，并用 `size_matches` 标出截断产物。
+
+设计依据与先例对比见 [prior-art-era5-fetch.md](docs/prior-art-era5-fetch.md)。
+
 ## 六、下游科研工作如何使用这份目录
 
 DBAS 是数据侧的**唯一入口**，下游实验仓只读 catalog：

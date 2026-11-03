@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -27,6 +28,39 @@ from dbas_core.exceptions import ConfigError, FetchError
 from dbas_core.logging import get_logger
 
 log = get_logger("fetch")
+
+
+class FetchPermanentError(FetchError):
+    """不可重试的下载错误：重试必然以同样方式失败。
+
+    继承 `FetchError` 保持向后兼容——既有 `except FetchError` 仍然拦得住。
+
+    为什么需要它：runner 对任何异常都会重试到 `max_attempts`（默认 6 次，
+    间隔 60 秒）。但下列错误重试毫无意义，只会白等 6 分钟并占掉批次预算：
+    - 请求成本超 CDS 上限：必须把请求拆小，重试同一个请求必然再挂；
+    - 变量名/层级/数据集名写错：请求本身错了；
+    - 未接受数据集使用条款：要人去网页点同意，程序无法自愈。
+    这类错误一律快速失败，让人早点看到真正原因。
+    """
+
+    # runner 通过这个属性判断「不重试」。用属性而不是 isinstance，
+    # 是为了让 scheduler 层不必反向依赖 fetch 层。
+    permanent = True
+
+
+# 命中即判定为永久失败。只用明确短语，避免把偶发网络抖动误判成永久失败。
+_PERMANENT_PATTERNS = (
+    re.compile(r"cost\s*limit|too\s+large|exceeds?\s+the\s+.*limit", re.I),
+    re.compile(r"required_terms|accept the terms|licen[cs]e.*not.*accept", re.I),
+    re.compile(r"unknown\s+(variable|param|dataset|level)|invalid\s+(variable|request|param)", re.I),
+    re.compile(r"MarsNoDataError|no data available", re.I),
+)
+
+
+def is_permanent_fetch_error(message: str) -> bool:
+    """错误信息是否属于「不该重试」的类型。"""
+    return any(p.search(message) for p in _PERMANENT_PATTERNS)
+
 
 CLIENT_FACTORY: Callable[[], Any] | None = None  # 测试注入点；None = 用 cdsapi.Client
 
@@ -119,10 +153,45 @@ class FetchConfig:
         return reqs
 
 
+# 语义上是「位置」的参数：顺序有物理含义，归一化时必须原样保留。
+# area = [北, 西, 南, 东]，str 形式可能带前导零，都不能重排或重格式化。
+_POSITIONAL_KEYS = frozenset({"area"})
+
+
+def normalize_request(request: dict[str, Any]) -> dict[str, list[str]]:
+    """把 CDS 请求归一化成「键 → 排序后的字符串列表」，用于摘要与比较。
+
+    动机（借鉴 cdsswarm `_cds_utils.normalize_request`）：
+    CDS 侧把 `"year": "2024"` 和 `"year": ["2024"]` 视为同一个请求，
+    但直接 json.dumps 会得到两个完全不同的摘要，于是同一份数据被重复入队下载。
+    同理 `["01", "02"]` 与 `["02", "01"]` 在服务端等价（集合语义），也应折叠。
+
+    与 cdsswarm 的差异：它保留所有 list 顺序（为了安全地兼容位置参数），
+    这里按参数名区分——只有 `area` 这类位置参数保序，集合型参数一律排序后去重。
+    """
+    out: dict[str, list[str]] = {}
+    for key in sorted(request):
+        value = request[key]
+        if key in _POSITIONAL_KEYS:
+            items = list(value) if isinstance(value, (list, tuple)) else [value]
+            out[key] = [str(v) for v in items]
+            continue
+        items = list(value) if isinstance(value, (list, tuple)) else [value]
+        # set 去重顺带吞掉重复值（如 day 列表里误写两遍 "01"）
+        out[key] = sorted({str(v) for v in items})
+    return out
+
+
 def request_dedup_key(cfg: FetchConfig, req_meta: dict[str, Any]) -> str:
+    """下载任务去重键：dataset + 归一化后的请求。
+
+    注意不要把凭证、task_id 之类的易变字段塞进来：它们既不属于请求语义，
+    又会把「同一份数据」拆成多个键，还会在摘要里留下可离线爆破的校验值。
+    """
     import hashlib
     import json
-    payload = json.dumps({"dataset": cfg.dataset, **req_meta["request"]},
+    payload = json.dumps({"dataset": cfg.dataset,
+                          "request": normalize_request(req_meta["request"])},
                          sort_keys=True, ensure_ascii=False)
     return "download:" + hashlib.sha1(payload.encode()).hexdigest()[:16]
 
@@ -178,11 +247,21 @@ def download_one(catalog: Catalog, params: dict, project_root: Path,
         from dbas.fetch.capture import CaptureConfig, JsonlWriter, ObservedCdsClient
         client = ObservedCdsClient(client, JsonlWriter(CaptureConfig(Path(capture_dir))),
                                   task_id=task_id)
+    request_id: str | None = None
     try:
         client.retrieve(params["dataset"], params["request"], str(part))
-    except Exception as e:  # noqa: BLE001 cdsapi 异常类型多，统一转 FetchError
+        # 抓包包装会记下服务端 request_id：进程被杀后可用它直接取结果，
+        # 不必重新排到 9000+ 人的队列尾部。
+        request_id = getattr(client, "last_request_id", None)
+    except Exception as e:  # noqa: BLE001 cdsapi 异常类型多，统一转成自己的错误类型
         part.unlink(missing_ok=True)
-        raise FetchError(f"CDS 下载失败: {type(e).__name__}: {e}") from e
+        msg = f"CDS 下载失败: {type(e).__name__}: {e}"
+        # 永久失败不重试：重试只会白等 max_attempts 轮，真正原因反而被淹没。
+        if is_permanent_fetch_error(msg):
+            raise FetchPermanentError(
+                f"{msg}（判定为不可重试：请检查请求是否超过成本上限、"
+                f"变量名是否正确、或是否需要先在网页接受数据集条款）") from e
+        raise FetchError(msg) from e
 
     if not part.exists() or part.stat().st_size == 0:
         part.unlink(missing_ok=True)
@@ -198,4 +277,8 @@ def download_one(catalog: Catalog, params: dict, project_root: Path,
         {"file_id": file_id, "volume_id": params["volume_id"],
          "rel_path": params["target_rel"]},
         dedup_key=f"scan_metadata:{file_id}:{int(st.st_mtime)}")
-    return {"path": str(target), "size_bytes": st.st_size}
+    result = {"path": str(target), "size_bytes": st.st_size}
+    if request_id:
+        # 回传给调用方（runner）落库，供下次复用与追溯
+        result["cds_request_id"] = request_id
+    return result

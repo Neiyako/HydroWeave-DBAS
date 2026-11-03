@@ -129,3 +129,69 @@ def test_dedup_key_stable(fcfg):
     r2 = dict(r)
     r2["request"] = {**r["request"], "month": "03"}
     assert request_dedup_key(fcfg, r) != request_dedup_key(fcfg, r2)
+
+
+# ---- 归一化与错误分级（借鉴 cdsswarm 与 ecmwf/cdsapi 的做法） ----
+
+def test_dedup_key_equivalent_forms_collapse(fcfg):
+    """同一语义的不同写法必须折叠成一个 dedup_key，否则会重复下载。"""
+    base = fcfg.build_requests()[0]
+    # "2024" vs ["2024"]：CDS 视为等价，摘要也应相同
+    r2 = dict(base)
+    r2["request"] = {**base["request"], "year": ["2024"]}
+    assert request_dedup_key(fcfg, base) == request_dedup_key(fcfg, r2)
+    # 集合型参数顺序无关
+    r3 = dict(base)
+    r3["request"] = {**base["request"], "month": ["01"], "variable": ["a", "b"]}
+    r4 = dict(base)
+    r4["request"] = {**base["request"], "month": ["01"], "variable": ["b", "a"]}
+    assert request_dedup_key(fcfg, r3) == request_dedup_key(fcfg, r4)
+
+
+def test_dedup_key_preserves_area_order(fcfg):
+    """area 是位置参数 [北, 西, 南, 东]，重排会变成另一个地理区域，不能归一化掉。"""
+    base = fcfg.build_requests()[0]
+    r2 = dict(base)
+    r2["request"] = {**base["request"], "area": [40, 110, 30, 120]}
+    r3 = dict(base)
+    r3["request"] = {**base["request"], "area": [30, 110, 40, 120]}
+    assert request_dedup_key(fcfg, r2) != request_dedup_key(fcfg, r3)
+
+
+def test_normalize_request_shape():
+    from dbas.fetch.cds import normalize_request
+    out = normalize_request({"year": "2024", "day": ["02", "01"], "area": [40, 110, 30, 120]})
+    assert out["year"] == ["2024"]              # 标量包成列表
+    assert out["day"] == ["01", "02"]           # 集合型排序
+    # 位置参数保序；值统一转字符串，保证 40 与 "40" 摘要一致
+    assert out["area"] == ["40", "110", "30", "120"]
+
+
+@pytest.mark.parametrize("msg,permanent", [
+    ("RuntimeError: 403 Client Error: cost limits exceeded. Your request is too large", True),
+    ("MarsNoDataError: no data available for this selection", True),
+    ("Exception: You need to accept the terms (required_terms)", True),
+    ("ConnectionError: Connection reset by peer", False),      # 网络抖动仍应重试
+    ("HTTPError: 503 Service Unavailable", False),             # 服务端临时故障仍应重试
+])
+def test_is_permanent_fetch_error(msg, permanent):
+    from dbas.fetch.cds import is_permanent_fetch_error
+    assert is_permanent_fetch_error(msg) is permanent
+
+
+def test_download_raises_permanent_on_cost_limit(cat, fcfg, tmp_path, monkeypatch):
+    """403 成本超限：判定为永久失败，不浪费 6 轮重试。"""
+    from dbas.fetch.cds import FetchPermanentError
+    ensure_download_volume(cat, fcfg, tmp_path)
+    enqueue_fetch_tasks(cat, fcfg)
+
+    class CostLimitClient:
+        def retrieve(self, dataset, request, target):
+            raise RuntimeError("403 Client Error: cost limits exceeded, request is too large")
+
+    monkeypatch.setattr("dbas.fetch.cds.CLIENT_FACTORY", lambda: CostLimitClient())
+    params = __import__("json").loads(cat.list_tasks(status="pending")[0]["params_json"])
+    with pytest.raises(FetchPermanentError) as ei:
+        download_one(cat, params, tmp_path)
+    assert ei.value.permanent is True
+    assert isinstance(ei.value, FetchError)       # 向后兼容既有 except

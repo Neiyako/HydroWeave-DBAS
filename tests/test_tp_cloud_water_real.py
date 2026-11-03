@@ -243,3 +243,50 @@ def test_real_run_figures_and_summary():
         assert f"| {year} | {DAYS_PER_YEAR} |" in summary
     assert "max abs diff" not in summary      # 摘要不应混入测试措辞
     assert "代理" in summary
+
+def test_daily_table_has_no_gaps():
+    run = _require_run()
+    import csv
+    rows = list(csv.DictReader((run / "tables" / "tp_daily.csv").open(encoding="utf-8")))
+    assert len(rows) == len(YEARS) * DAYS_PER_YEAR
+    for year in YEARS:
+        dates = sorted(r["date"] for r in rows if r["year"] == str(year))
+        assert dates[0] == f"{year}0501" and dates[-1] == f"{year}1031"
+        assert len(dates) == len(set(dates)) == DAYS_PER_YEAR
+        for day in range(1, 32):
+            assert f"{year}05{day:02d}" in dates
+            assert f"{year}10{day:02d}" in dates
+    for row in rows:
+        assert 0.0 <= float(row["pw_mm"]) < 150.0
+        assert 0.0 <= float(row["rh500_pct"]) <= 300.0
+        assert 0.0 <= float(row["cfrac_pct"]) <= 100.0
+        assert 400.0 <= float(row["surf_p_hpa"]) <= 1000.0
+
+
+def test_monthly_fields_consistent_with_daily_tables():
+    """月平均场与逐日表的面积加权聚合必须一致（防止聚合口径分叉）。"""
+    import csv
+
+    run = _require_run()
+    months = list(csv.DictReader((run / "tables" / "tp_monthly.csv").open(encoding="utf-8")))
+    for year in YEARS:
+        with xr.open_dataset(run / "yearly" / f"tp_monthly_{year}.nc") as ds:
+            lat = ds["latitude"].values
+            w = np.cos(np.deg2rad(lat))
+            weight = np.broadcast_to(w[:, None], ds["pw"].shape[1:])
+            for row in (r for r in months if r["year"] == str(year)):
+                mi = list(ds["month"].values).index(int(row["month"]))
+                for var, column, scale in (("pw", "pw_mm", 1.0),
+                                           ("rh500", "rh500_pct", 1.0),
+                                           ("cfrac", "cfrac_pct", 100.0)):
+                    field = ds[var].isel(month=mi).values * scale
+                    ok = np.isfinite(field)
+                    got = float((field[ok] * weight[ok]).sum() / weight[ok].sum())
+                    expected = float(row[column])
+                    assert abs(got - expected) <= 1e-3 * abs(expected) + 1e-3, (
+                        f"{year}-{row['month']} {var}: nc加权均值 {got:.6f} != 逐日表 {expected:.6f}")
+                sp = ds["surf_p"].isel(month=mi).values
+                got_sp = float(np.nanmean(sp))
+                expected_sp = float(row["surf_p_hpa"])
+                assert abs(got_sp - expected_sp) <= 1e-3, (
+                    f"{year}-{row['month']} surf_p: {got_sp} != {expected_sp}")

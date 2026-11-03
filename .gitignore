@@ -23,3 +23,6 @@ configs/local*.yaml
 
 # xkCode 本地会话/计划状态
 .zcode/
+
+# 调研资料（IFS/文献 PDF 及其切片，约 20MB）与本地抓包产物，不入 Git
+.research/

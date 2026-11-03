@@ -35,3 +35,20 @@ resource:
   min_available_mb: 1024
 
 log_level: INFO
+
+# 数组层（Zarr 派生）：把 .nc 升维成可切片数组，原始卷仍只读
+# 分块方案由查询模式反推（见 src/dbas/zarr_export/store.py 的 TARGET_RULES）：
+#   field_series  整场单时刻为主  → time=1，空间整块
+#   point_series  单点长时间序列  → 空间 8×8，时间整段
+#   area_stats    区域/时间统计   → 空间 32，时间 128
+#   level_profile 按气压层剖面    → level=1，时间 24
+zarr:
+  array_dir: data/arrays     # store 根目录（分析数组层产物卷）
+  volume_id: arrays          # 登记进 catalog 的卷 ID
+  default_target: field_series
+  chunk_elements: 8000000    # 单 chunk 元素上限（压缩前）；8M × f4 ≈ 32MB
+  shards: 1                  # 分片倍数：>1 时把 N 个 chunk 合成一个分片文件
+  complevel: 4
+  consolidate: true
+  budget_s: 900
+  batch_size: 5

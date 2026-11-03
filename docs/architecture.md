@@ -20,6 +20,8 @@ scanner → catalog、inspection
 fetch → catalog（下载注册 + 入队 scan_metadata）
 catalog → core（配置、异常）
 cli → storage/backup（db backup 的在线备份与校验）
+cli → zarr_export（数组层派生：分块计划、store 写入、清单哈希）
+zarr_export → catalog（数组层条目登记 + 清单指纹）
 下游实验仓（Hydroweave）→ catalog（只读查询，不在本仓）
 ```
 
@@ -50,6 +52,22 @@ cli → storage/backup（db backup 的在线备份与校验）
 - 数据集级规则：R101 轴签名不一致、R102 日期缺变量、R103 整日缺失、
   R104 重复日期+变量、R105 数据集变量整体缺失。
 - 报告由 `reports/profile_qc.py` 从 catalog 生成，不重复读原始数据。
+
+## 数组层（Zarr 派生）
+
+`zarr_export` 与 `subset` 同构：`plan → enqueue → run`，同样走 Runner 的
+预算/批次/重试/断点续跑语义。区别在产物与证据：
+
+- subset 产物是**一个 .nc 文件**，登记后由 `scan_metadata` 正常解析；
+- zarr_export 产物是**一个 store 目录**，作为卷内**一个条目**登记，
+  指纹用 `manifest-sha256`（覆盖 store 内全部 chunk 的清单哈希），
+  不用单文件 sha256——这是 Zarr 缺失比特级证据的补齐方式；
+- 分块由查询模式反推（`field_series` / `point_series` / `area_stats` /
+  `level_profile`），同一源文件可并存多种布局，产物路径按 target 分目录。
+
+数组层写进独立的 `data/arrays/` 卷（`zarr.volume_id`），不与 subset 的
+`data/analysis/` 混卷，避免两类产物在同一卷里互相干扰 plan 统计。
+详见 [zarr-layer.md](zarr-layer.md)。
 
 ## 任务生命周期
 

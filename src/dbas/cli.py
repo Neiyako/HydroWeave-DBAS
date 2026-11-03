@@ -511,6 +511,179 @@ def cmd_subset(args, cfg) -> int:
     return 2
 
 
+# --------------------------------------------------------------------------
+# zarr：数组层派生（源 .nc → Zarr store，登记回 catalog）
+# --------------------------------------------------------------------------
+
+def _ensure_array_volume(cat, cfg) -> str:
+    """创建数组层目录并注册为数据卷，返回卷 ID。"""
+    from dbas.zarr_export.config_ext import install_zarr_config
+    install_zarr_config()
+    zcfg = cfg.section("zarr")
+    cfg.array_dir.mkdir(parents=True, exist_ok=True)
+    cat.register_volume(zcfg["volume_id"], cfg.array_dir,
+                        label="数组层卷（Zarr 派生）",
+                        notes="由 zarr_export 创建；源卷只读、store 可再生")
+    return zcfg["volume_id"]
+
+
+def cmd_zarr(args, cfg) -> int:
+    from dbas.zarr_export.config_ext import available_targets, install_zarr_config
+    from dbas.zarr_export.store import estimate_chunk_bytes, plan_chunks
+    from dbas.zarr_export.tasks import reconcile_store, zarr_export_one
+
+    install_zarr_config()
+    zcfg = cfg.section("zarr")
+
+    if args.action == "plan":
+        import xarray as xr
+        source = Path(args.source).expanduser()
+        if not source.exists():
+            print(f"源文件不存在: {source}", file=sys.stderr)
+            return 2
+        ds = xr.open_dataset(source, chunks=None)
+        try:
+            print(f"源: {source}")
+            print(f"维度: {dict(ds.sizes)}")
+            print(f"变量: {sorted(str(v) for v in ds.data_vars)}")
+            print()
+            for t in ([args.target] if args.target else available_targets()):
+                p = plan_chunks(ds, t, chunk_elements=int(zcfg["chunk_elements"]))
+                est = estimate_chunk_bytes(ds, p)
+                biggest = max(est.values()) if est else 0
+                print(f"[{t}] {p.rationale}")
+                print(f"     分块 {p.chunks} | 最大单块 {biggest/1e6:.1f} MB"
+                      f" | 预估文件数 ~{_estimate_files(ds, p)}")
+        finally:
+            ds.close()
+        return 0
+
+    if args.action == "enqueue":
+        with _open_catalog(cfg) as cat:
+            from dbas_core.analysis.subset import ensure_analysis_volume
+            ensure_analysis_volume(cat, cfg)
+            vol = _ensure_array_volume(cat, cfg)
+            targets = (args.target.split(",") if args.target
+                       else [zcfg["default_target"]])
+            variables = ([v.strip() for v in args.variables.split(",") if v.strip()]
+                         if args.variables else None)
+            var_sig = ",".join(sorted(variables)) if variables else "all"
+            files = list(cat.iter_files(volume_id=args.volume, status="active"))
+            created = skipped = 0
+            for f in files:
+                if Path(f["rel_path"]).suffix.lower() not in _nc_extensions(cfg):
+                    continue
+                mtime = int(f["mtime"]) if f["mtime"] else 0
+                for t in targets:
+                    _, ok = cat.enqueue_task(
+                        "zarr_export",
+                        {"file_id": f["file_id"], "volume_id": f["volume_id"],
+                         "rel_path": f["rel_path"], "target": t,
+                         "region": args.region, "variables": variables,
+                         "shards": args.shards, "force": bool(args.force)},
+                        dedup_key=(f"zarr_export:{f['file_id']}:{mtime}:{t}:"
+                                   f"{args.region or '-'}:{var_sig}:"
+                                   f"{args.shards or '-'}:{int(bool(args.force))}"))
+                    created += ok
+                    skipped += not ok
+            print(f"入队数组导出任务 {created} 个，跳过重复 {skipped} 个 → "
+                  f"数组层卷 {vol}（{cfg.array_dir}）")
+            print(f"分块策略: {', '.join(targets)}")
+            print("执行: python -m dbas zarr run")
+        return 0
+
+    if args.action == "run":
+        with _open_catalog(cfg) as cat:
+            def handler(params, catalog, ctx):
+                return zarr_export_one(params, catalog, ctx, cfg=cfg)
+
+            sched = cfg.section("scheduler")
+            res = cfg.section("resource")
+            runner = Runner(cat, {"zarr_export": handler},
+                            budget_s=args.budget if args.budget is not None
+                            else zcfg["budget_s"],
+                            batch_limit=args.batch_size if args.batch_size is not None
+                            else zcfg["batch_size"],
+                            guard=ResourceGuard(res["max_rss_mb"],
+                                                res["min_available_mb"]),
+                            retry_delay_s=sched["retry_delay_s"],
+                            stale_running_s=sched["stale_running_s"], resume=True)
+            summary = runner.run(types=["zarr_export"])
+            _print_summary(summary)
+        return 0
+
+    if args.action == "verify":
+        rel = args.store
+        root = (Path(rel) if Path(rel).is_absolute()
+                else Path(cfg.array_dir) / rel)
+        if not root.is_dir():
+            print(f"store 不存在: {root}", file=sys.stderr)
+            return 2
+        with _open_catalog(cfg) as cat:
+            file_id = None
+            for f in cat.iter_files(volume_id=zcfg["volume_id"]):
+                if f["rel_path"] == rel:
+                    file_id = f["file_id"]
+                    break
+            res = reconcile_store({"rel_path": rel, "file_id": file_id},
+                                  cat, None, cfg=cfg)
+        s = res["summary"]
+        print(f"store: {rel}")
+        print(f"文件 {s['files']} | 数组 {s['arrays']} | chunk {s['chunks']} "
+              f"| 总大小 {s['total_bytes']/1e6:.1f} MB")
+        print(f"登记指纹: {res['recorded_digest'] or '（未登记）'}")
+        print(f"当前指纹: {res['current_digest']}")
+        print("结论: " + ("✔ 一致（store 未被改动）" if res["match"]
+                          else "✘ 不一致（store 与登记时不符）"))
+        sidecar = Path(cfg.reports_dir) / "zarr" / f"{file_id}.manifest.json"
+        if not res["match"] and sidecar.exists():
+            from dbas.zarr_export.manifest import (ManifestEntry, StoreManifest,
+                                                   compare_manifests, scan_store)
+            import json as _json
+            old = _json.loads(sidecar.read_text(encoding="utf-8"))
+            om = StoreManifest(root=root,
+                               entries=[ManifestEntry(**e) for e in old["entries"]])
+            diff = compare_manifests(om, scan_store(root))
+            print(f"  相对登记时：新增 {diff['added_count']} / "
+                  f"删除 {diff['removed_count']} / 变更 {diff['changed_count']}")
+            for k in ("added", "removed", "changed"):
+                for p in diff[k][:5]:
+                    print(f"    {k}: {p}")
+        return 0
+
+    if args.action == "info":
+        with _open_catalog(cfg, read_only=True) as cat:
+            rows = list(cat.iter_files(volume_id=zcfg["volume_id"]))
+        if not rows:
+            print(f"数组层卷 {zcfg['volume_id']} 中暂无条目")
+            return 0
+        print(f"数组层卷 {zcfg['volume_id']}（{cfg.array_dir}）")
+        for f in rows:
+            fp = (f.get("fingerprint") or "-")[:16]
+            print(f"  {f['rel_path']}")
+            print(f"    大小 {f['size_bytes']/1e6:.1f} MB | "
+                  f"{f.get('fingerprint_algo') or '-'}:{fp}")
+        return 0
+
+    print(f"未知 zarr 操作: {args.action}", file=sys.stderr)
+    return 2
+
+
+def _estimate_files(ds, plan) -> int:
+    """粗估分块后的 chunk 文件数（不含坐标数组与元数据）。"""
+    n = 0
+    for name, var in ds.data_vars.items():
+        if not var.dims:
+            continue
+        c = 1
+        for i, d in enumerate(var.dims):
+            size = int(var.shape[i])
+            ch = int(min(plan.chunks[str(d)], size))
+            c *= -(-size // max(ch, 1))
+        n += c
+    return n
+
+
 def cmd_fetch(args, cfg) -> int:
     from dbas.fetch.cds import FetchConfig, download_one, enqueue_fetch_tasks, ensure_download_volume
     if args.action == "capture":
@@ -663,6 +836,29 @@ def build_parser() -> argparse.ArgumentParser:
     rn.add_argument("--budget", type=float, default=None)
     rn.add_argument("--batch-size", type=int, default=None)
 
+    sp = sub.add_parser("zarr", help="数组层派生（.nc → Zarr store，登记回 catalog）")
+    zsub = sp.add_subparsers(dest="action", required=True)
+    zp = zsub.add_parser("plan", help="预览分块方案（不写数据，不写库）")
+    zp.add_argument("--source", required=True, help="源 .nc 文件路径")
+    zp.add_argument("--target", default=None,
+                    help="只看某一种查询模式；省略则列出全部")
+    ze = zsub.add_parser("enqueue", help="把数组导出任务入队")
+    ze.add_argument("--volume", required=True)
+    ze.add_argument("--target", default=None,
+                    help="查询模式，逗号分隔（默认取配置 zarr.default_target）")
+    ze.add_argument("--region", default=None, help="先按区域裁切再导出（可选）")
+    ze.add_argument("--variables", default=None, help="逗号分隔变量白名单")
+    ze.add_argument("--shards", type=int, default=None,
+                    help="分片倍数：N 个 chunk 合并成一个分片文件（默认不分片）")
+    ze.add_argument("--force", action="store_true", help="已存在的 store 也重建")
+    zr = zsub.add_parser("run", help="执行数组导出任务（分批/断点续跑）")
+    zr.add_argument("--budget", type=float, default=None)
+    zr.add_argument("--batch-size", type=int, default=None)
+    zv = zsub.add_parser("verify", help="对账 store 的清单哈希是否与登记一致")
+    zv.add_argument("--store", required=True,
+                    help="数组层卷内相对路径或绝对路径")
+    zsub.add_parser("info", help="列出数组层卷内的 store 条目")
+
     sp = sub.add_parser("dataset", help="数据集分组与识别")
     dsub = sp.add_subparsers(dest="action", required=True)
     dsub.add_parser("list", help="列出数据集及文件/解析/画像计数")
@@ -717,7 +913,7 @@ _DISPATCH = {
     "verify": cmd_verify, "checksum": cmd_checksum, "tasks": cmd_tasks,
     "report": cmd_report, "db": cmd_db, "fetch": cmd_fetch,
     "subset": cmd_subset, "dataset": cmd_dataset, "profile": cmd_profile,
-    "qc": cmd_qc,
+    "qc": cmd_qc, "zarr": cmd_zarr,
 }
 
 

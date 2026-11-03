@@ -28,6 +28,13 @@ eda = [
     "dask[array]>=2024.1",
     "flox>=0.9",
 ]
+# 数组层（.nc → Zarr store）：zarr 3.x 的 codec 与 sharding API 与 v2 不兼容，
+# 故下限钉在 3.0；实测版本见 configs/constraints-py313.txt。
+zarr = [
+    "xarray>=2024.1",
+    "dask[array]>=2024.1",
+    "zarr>=3.0",
+]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

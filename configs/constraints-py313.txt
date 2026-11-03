@@ -15,4 +15,9 @@ pytest==9.2.0
 PyYAML==6.0.3
 scipy==1.18.1
 xarray==2026.9.0
+zarr==3.4.2
+numcodecs==0.17.1
+donfig==0.8.1.post1
+msgspec==0.22.0
+google-crc32c==1.9.0
 # dbas-core 用 Git commit 钉版本，见 pyproject.toml 的 dependencies。

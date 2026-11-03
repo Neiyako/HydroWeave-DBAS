@@ -64,42 +64,34 @@
 - 画像统计是抽样结果，不能替代单格/全量精确分析；规则命中会写入
   `quality_reports`，带证据 JSON 与 `needs_human` 标记，原始数据永远不被修改。
 
-## 可复现实验：云水代理 EDA
+## 下游实验与绘图（不在本仓）
 
-实验层在 `experiments/`，产物在 `data/analysis/<exp>/runs/<run_id>/`。
-完整说明见 [`experiments/tp_cloud_water/README.md`](../experiments/tp_cloud_water/README.md)。
-
-```bash
-# 真实卷（先确认 /Volumes/Untitled 在线、catalog 已 scan）
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/eda.py \
-  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
-  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
-```
-
-- 中断（Ctrl-C、进程被杀、单日读取失败）后重跑同一命令即可：已完成年份在
-  `manifest.json` 里，直接跳过；每年产物先写 `.part` 再原子替换。
-- 配置或输入指纹（卷 ID/相对路径/大小/mtime）变化时，同 run-id 会报
-  「不一致」并拒绝续跑；换 `--run-id` 或显式 `--force`。
-- 检查完成状态：看 `manifest.json` 的 `status`/`completed_years`/
-  `failed_dates`，以及 `summary/tp_eda_summary.md`。
-- 真实卷验收：`.venv/bin/python scripts/dev/validate_real_eda.py`，输出
-  `data/analysis/tp_cloud_water/validation/real_eda_check.md`（六条硬标准 +
-  PASS/CONDITIONAL_PASS/FAIL）。
-- 没有外接盘时可用合成 fixture 验证链路（不联网、不花费用）：
+本仓到「资产可定位、可校验」为止。科研实验、物理量计算与出图在独立的
+Hydroweave 实验仓里，它只读本仓 catalog：
 
 ```bash
-.venv/bin/python scripts/demo/make_tp_cloud_water_fixture.py /tmp/tp_fixture --days 3
-PYTHONPATH=src:. .venv/bin/python -m experiments.tp_cloud_water.eda \
-  --config /tmp/tp_fixture/config.yaml --run-id fixture
+# 1. 先在 DBAS 侧把卷和数据集索引好（本仓）
+dbas volume register /Volumes/Untitled --id era5hd
+dbas scan --volume era5hd --mode inventory --enqueue-metadata
+dbas scan --volume era5hd --mode metadata
+dbas dataset assign --volume era5hd
+
+# 2. 再到实验仓按 run-id 计算与制图（Hydroweave 仓）
+#    cd ~/Desktop/Hydroweave && PYTHONPATH=src:. .venv/bin/python \
+#      experiments/tp_cloud_water/eda.py --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
 ```
+
+约定：
+
+- 实验仓**只读** catalog，不写回、不改原始卷；本仓不感知实验产物；
+- 需要比特级归档证据时，先在本仓 `dbas checksum --volume era5hd` 分批生成校验和；
+- 实验产物、运行清单与验收报告由实验仓自己管理，不进本仓 `data/`。
 
 ## 已声明的未实现项
 
 清洗、特征工程命令尚未提供；QC 目前是首版规则集，人工复核流程和更多物理
-一致性规则（如探空/再分析交叉检验）尚未实现。云水代理 EDA 已实现为
-`experiments/` 层，但仍是**代理指标**：本卷没有 clwc/ciwc/总云量，结果不能
-当作真云水含量。
+一致性规则（如探空/再分析交叉检验）尚未实现。科研实验与绘图在 Hydroweave
+实验仓，本仓只承担数据资产层。
 CDS 服务器排队时间不可控，fetch 不设硬超时，中断后重跑即可。
 
 ## 数据盘：`era5hd` = /Volumes/Untitled

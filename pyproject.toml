@@ -21,14 +21,12 @@ dependencies = [
 
 [project.optional-dependencies]
 fetch = ["cdsapi>=0.7"]
-# 实验层（experiments/tp_cloud_water）与 subset 需要：xarray/dask 读写，
-# matplotlib 制图，pyshp 读 shp 底图（import 名仍为 shapefile）。
+# subset 需要 xarray/dask 读写 NetCDF 并做区域裁切。
+# 科研实验与绘图不在本仓：见 Hydroweave 实验仓。
 eda = [
     "xarray>=2024.1",
-    "matplotlib>=3.8",
     "dask[array]>=2024.1",
     "flox>=0.9",
-    "pyshp>=2.3",
 ]
 dev = ["pytest>=8.0"]
 
@@ -42,6 +40,3 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
-markers = [
-    "real: 需要外接 ERA5 卷在线（/Volumes/Untitled）的真实数据测试",
-]

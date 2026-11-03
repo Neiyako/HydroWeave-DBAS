@@ -1,15 +1,26 @@
-# HydroWeave / DBAS — 科研数据资产数据库管理系统
+# DBAS — 科研数据资产管理与任务编排系统
 
-DBAS（以数据库为核心的数据资产管理系统）面向个人与小团队的科研数据资产管理：把分散在移动硬盘、工作目录和下载目录中的文件，登记为**可检索、可校验、可追踪、可恢复的本地目录数据库**。
+DBAS 面向个人与小团队的科研数据资产管理：把分散在移动硬盘、工作目录和下载目录中的文件，登记为**可检索、可校验、可追踪、可恢复的本地目录数据库**。
 
 > **DBAS 管理数据库，不替代原始数据仓库。** 原始卷保持只读；SQLite catalog 保存卷、文件、元数据、数据集、质量证据和任务状态；扫描、校验、备份和任务队列负责让这份目录长期可维护。
 
 当前适配场景是 ERA5/NetCDF，但核心思路适用于任何以文件为单位的科研数据资产。
 
-- **本仓库 HydroWeave/DBAS：管理与编排** —— 卷登记、目录索引、扫描调度、任务队列、校验、备份、下载接入和运维报告。
-- **[dbas-core](https://github.com/Neiyako/dbas-core)：计算与绘图基础** —— NetCDF 解析、数据集识别、画像/QC、区域裁切、物理量计算，以及为 xarray/Matplotlib 绘图准备可审计结果。
+## 边界：DBAS 做到哪里为止
 
-当前版本 `0.1.0`。数据库管理链路、CDS 小体量 fetch、内容画像/QC 和 L1 subset 已实现；通用 EDA、清洗、特征工程和建模接口仍在迭代。
+| | DBAS（本仓） | Hydroweave 实验仓 |
+|---|---|---|
+| 主问题 | 数据资产如何登记、检索、维护和恢复 | 数据如何计算、质控并变成可复现图件 |
+| 数据卷 | 注册、在线/离线状态、稳定路径 | 只读使用 catalog 索引结果 |
+| 扫描任务 | inventory、incremental、metadata、verify、checksum | 不负责扫描 |
+| 输出 | catalog、任务历史、运维报告 | run 目录、运行清单、图件与摘要 |
+| 不负责 | 不做科研计算，不做绘图库 | 不做移动硬盘管理、全盘扫描和下载调度 |
+
+**本仓不含任何实验代码、物理量计算或绘图脚本。** 科研实验与出图请使用 Hydroweave 实验仓；
+需要比特级完整性证据时，由本仓 `dbas checksum` 生成，实验仓只引用结果。
+
+当前版本 `0.1.0`。数据库管理链路、CDS 小体量 fetch、内容画像/QC 和 L1 subset 已实现；
+通用 EDA、清洗、特征工程和建模接口不在本仓范围。
 
 ---
 
@@ -54,17 +65,14 @@ SQLite catalog（可备份、可检查、可重建）
 | 备份与重建 | SQLite 在线备份；原始数据不变时可从卷重新建立目录 | `dbas db backup`、`dbas db rebuild` |
 | 运维报告 | 从 catalog 输出盘点、任务和 QC 报告，不重复扫描全盘 | `dbas report inventory` |
 
-### 数据库之上的派生工作流
+### 数据库之上的应用层
 
-这些能力建立在 catalog 之上，但不是 DBAS 的首要定位：
+这些能力建立在 catalog 之上，用于让数据可理解，但不涉及科研计算：
 
 - `dataset assign/list`：按路径规则给文件归组；
 - `profile` / `qc`：对文件做抽样画像并记录质量证据；
-- `subset`：使用 dbas-core 和 xarray/dask 生成区域裁切产物；
-- `fetch`：管理小体量 CDS 请求，下载成功后自动登记为普通数据卷；
-- 下游计算与绘图：由 [dbas-core](https://github.com/Neiyako/dbas-core) 和上层分析脚本负责。
-
----
+- `subset`：生成区域裁切产物并登记为新卷（由 dbas-core 执行裁切）；
+- `fetch`：管理小体量 CDS 请求，下载成功后自动登记为普通数据卷。
 
 ## 三、30 秒建立一份数据库
 
@@ -147,73 +155,23 @@ dbas fetch run --config configs/fetch/era5_demo.yaml
 
 因此下载文件与外接硬盘文件共享同一套 `inventory → metadata → verify → checksum → report` 管理流程。抓包分析为可选的脱敏诊断工具，详见 `configs/fetch/` 和 `scripts/`。
 
-## 六、两仓职责
+## 六、下游科研工作如何使用这份目录
 
-| 层 | HydroWeave / DBAS | dbas-core |
-|---|---|---|
-| 主问题 | 数据资产如何登记、检索、维护和恢复 | 数据如何解析、计算、质控和变成可绘图结果 |
-| 数据卷 | 注册、在线/离线状态、稳定路径 | 通过 catalog 使用索引结果 |
-| 扫描任务 | inventory、incremental、metadata、verify、checksum | 提供 header 解析和任务处理内核 |
-| 数据理解 | 调度 dataset/profile/QC 工作流 | 数据集识别、抽样画像、QC 规则 |
-| 派生数据 | subset/fetch 任务编排和产物登记 | 区域裁切、坐标归一化、物理量计算 |
-| 输出 | catalog、任务历史、运维报告 | 可审计数组/表格结果，供 xarray/Matplotlib/Cartopy 绘图 |
-| 不负责 | 不把自己包装成通用绘图库 | 不负责移动硬盘管理、全盘扫描和下载调度 |
-
-## 七、下游计算与绘图：可复现实验层
-
-DBAS 的作用是把原始卷整理成可定位、可复核的数据资产；真正的物理计算和绘图放在 dbas-core 与上层脚本中。本仓库把这类下游工作收进 `experiments/`，按“配置驱动 + run 目录 + 运行清单”的方式组织，而不是散落的一次性脚本。
-
-当前唯一的实验是青藏高原云水代理 EDA（`experiments/tp_cloud_water/`）：
-
-- 2010–2013 年青藏高原 ERA5 气压层数据，区域 25–40°N / 70–105°E；
-- dbas-core 计算 PW、RH500 和云发生频率代理（CFRAC）；
-- Matplotlib/xarray 生成时间序列、空间分布和垂直剖面图。
-
-![年际对比](docs/img/fig_annual_comparison.png)
-
-> 当前案例的原始卷只有 `t/q/u/v`，PW/RH500/CFRAC 是代理指标，不是真云水含量；真云水需要 `clwc/ciwc` 或总云量场。完整计算口径见 [dbas-core](https://github.com/Neiyako/dbas-core) 的 `cloud_water_proxy` 模块。
-
-### 运行契约
-
-每次运行落到独立目录，已完成的年份不会被重算：
+DBAS 是数据侧的**唯一入口**，下游实验仓只读 catalog：
 
 ```bash
-# 合成试验台：不联网、不碰真实卷，用于验证整条链路
-.venv/bin/python scripts/demo/make_tp_cloud_water_fixture.py /tmp/tp_fixture --days 3
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/eda.py \
-    --config /tmp/tp_fixture/config.yaml
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
-    --config /tmp/tp_fixture/config.yaml
-
-# 真实卷：先确认外接盘在线、catalog 已 scan，再用同一 run-id 计算和制图
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/eda.py \
-    --config experiments/tp_cloud_water/config.yaml --run-id real-2010
-PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
-    --config experiments/tp_cloud_water/config.yaml --run-id real-2010
+# 实验仓（Hydroweave）通过 config.yaml 声明：
+#   catalog: <本仓 data/catalog.db 路径>
+#   volume_id: era5hd
+#   dataset_id: era5_pressure
+# 然后自己做计算、质控与制图，并写自己的 run manifest。
 ```
 
-产物结构：
+- 实验仓**不写** catalog，也不改原始卷；
+- 实验产物、运行清单和验收报告都在实验仓，不进本仓 `data/`；
+- 需要比特级归档证据时，用本仓 `dbas checksum` 分批生成。
 
-```text
-data/analysis/tp_cloud_water/runs/<run_id>/
-├── manifest.json      # 配置哈希、输入指纹、git/依赖版本、产物指纹、完成年份、失败日期
-├── yearly/            # 每年一个月平均 NetCDF（断点续跑的最小单元）
-├── tables/            # 逐日、逐月、读取问题清单
-├── figures/           # 8 张图
-└── summary/           # Markdown 摘要
-```
-
-- **续跑**：manifest 里 `completed_years` 已记录的年份直接跳过；`config_hash` 或
-  `input_fingerprint`（卷 ID + 相对路径 + 大小 + mtime）变了会拒绝续跑，要求显式 `--force`。
-- **容错**：单日文件读取失败只记入 `tables/tp_read_problems_*.csv` 与 manifest 的
-  `failed_dates`，不中断整年；年度产物写完后该年才计入完成。
-- **原子写**：清单与表格走同目录 `.part` + `os.replace`，进程被杀不会留下半截 JSON。
-- **可复现边界**：`config_hash` + 输入指纹 + git revision + 依赖版本能证明“换了什么”，
-  但代理指标的物理口径本身仍需观测对照，不能由一个 manifest 冒充验证。
-
-旧入口 `scripts/analysis/tp_cloud_water_{eda,plot}.py` 仍可用，只是转发的薄包装。
-
-## 八、架构与目录
+## 七、架构与目录
 
 ```text
 cli
@@ -221,9 +179,9 @@ cli
  ├── tasks / scheduler / resource_guard ─> catalog
  ├── fetch ─────────────────────────────> catalog + downloads volume
  └── report ────────────────────────────> catalog
-                                             │
-                                             ▼
-                                  dbas-core inspection / analysis / qc
+                                              │
+                                              ▼
+                                   dbas-core inspection / analysis / qc
 ```
 
 ```text
@@ -234,26 +192,22 @@ src/dbas/
 ├── resource_guard/  RSS/可用内存软保护
 ├── fetch/           ERA5 CDS API 下载与捕获诊断
 ├── reports/         Markdown 盘点与 QC 报告
-├── repro/           运行清单：配置哈希、输入指纹、原子写、产物指纹
 └── cli.py           统一命令入口
 
-experiments/         配置驱动的可复现实验层
-└── tp_cloud_water/  云水代理 EDA（config / common / eda / plot）
-
 scripts/             只放可执行入口，约定见 scripts/README.md
-├── analysis/        实验命令行的薄包装，转发到 experiments/
-├── demo/            合成数据卷与 fixture 生成器
-└── dev/             维护脚本（真实卷独立验收）
+├── demo/            合成数据卷生成器
+└── *.py             抓包诊断等运维工具
 
 configs/             系统配置、fetch 请求模板与依赖约束文件
 data/                catalog、备份、报告和派生产物（不入 Git）
 tests/               合成数据测试（默认不联网）
-docs/                架构说明、运行手册与例图
+docs/                架构说明与运行手册
 ```
 
-底层包的主要模块包括：`dbas_core.catalog`、`dbas_core.inspection`、`dbas_core.analysis.datasets`、`profile`、`regions`、`subset`、`cloud_water_proxy` 和 `dbas_core.qc`。
+底层包 `dbas-core` 的主要模块包括：`dbas_core.catalog`、`dbas_core.inspection`、
+`dbas_core.analysis.datasets`、`profile`、`regions`、`subset` 和 `dbas_core.qc`。
 
-## 九、安装与测试
+## 八、安装与测试
 
 需要 Python 3.11+。安装 DBAS 时会自动从 GitHub 拉取 dbas-core（已在
 `pyproject.toml` 钉到固定 commit，避免上游漂移）：
@@ -281,24 +235,17 @@ chflags nohidden .venv/lib/python3.*/site-packages/*.pth
 
 ```bash
 .venv/bin/python -m pip install -e '.[fetch]'   # CDS API
-.venv/bin/python -m pip install -e '.[eda]'     # subset / 画像 / 实验性 EDA
+.venv/bin/python -m pip install -e '.[eda]'     # subset / 画像
 ```
 
 测试使用临时目录和合成 NetCDF，不联网、不依赖真实 ERA5 卷，覆盖 CLI、扫描、
-任务调度、fetch 管理链路，以及 dbas-core 的解析/画像/QC/subset 测试。此外还有：
-
-- 运行清单与在线备份的单元测试（`tests/test_repro_manifest.py`、`tests/test_backup.py`）；
-- 云水代理实验的全链路测试：合成 fixture → EDA → manifest → 断点续跑 → 制图；
-- 真实卷测试 `tests/test_tp_cloud_water_real.py`（9 个 `-m real` 用例，外接盘
-  不在线时自动 skip）：catalog 与盘上文件一致、736 天季节覆盖、单日物理区间、
-  单柱 PW 独立重算、真实 run 的 manifest 与新旧产物回归。
+任务调度、fetch 管理链路、在线备份与失败清理、dbas-core 的解析/画像/QC/subset：
 
 ```bash
-.venv/bin/python -m pytest -m real -q                    # 只跑真实数据测试
-.venv/bin/python scripts/dev/validate_real_eda.py        # 真实卷独立验收报告
+.venv/bin/python -m pytest -q
 ```
 
-## 十、路线图与边界
+## 九、路线图与边界
 
 已实现：
 
@@ -306,19 +253,16 @@ chflags nohidden .venv/lib/python3.*/site-packages/*.pth
 - 预算、批次、重试、陈旧回收、断点续跑；
 - verify/checksum、数据库检查、在线备份和 Markdown 报告；
 - CDS 小体量下载与 catalog 集成；
-- 首版内容画像、QC 证据和区域裁切；
-- 可复现实验层（run 目录、运行清单、断点续跑、独立验收）；
-- 云水代理 EDA 首版：2010–2013 真实卷全量跑通，与旧实现产物逐比特一致。
+- 首版内容画像、QC 证据和区域裁切。
 
 未实现或仍在迭代：
 
-- 通用 EDA、非破坏性清洗、特征工程、Parquet 导出和建模接口；
+- 通用 EDA、非破坏性清洗、特征工程、Parquet 导出和建模接口（不在本仓范围）；
 - 更完整的 QC 规则、人工复核和危险解析隔离；
-- 通用气候态、季节循环、海拔分层统计与绘图 API；
-- 实验层抽样开关（`--limit-days`）与旧扁平产物的归档迁移；
 - 真实卷全量 `checksum` 比特级基线（需低峰期分批执行）。
 
-DBAS 的主产品边界是**数据库管理与任务编排**；计算公式、分析结果和绘图工作流请使用 [dbas-core](https://github.com/Neiyako/dbas-core) 及其上层分析脚本。
+**DBAS 的产品边界是数据库管理与任务编排。** 计算公式、分析结果和绘图工作流请使用
+Hydroweave 实验仓与 dbas-core。
 
 ## 许可
 

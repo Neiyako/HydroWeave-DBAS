@@ -20,7 +20,7 @@ scanner → catalog、inspection
 fetch → catalog（下载注册 + 入队 scan_metadata）
 catalog → core（配置、异常）
 cli → storage/backup（db backup 的在线备份与校验）
-experiments/* → repro/manifest、catalog（只读查询）
+下游实验仓（Hydroweave）→ catalog（只读查询，不在本仓）
 ```
 
 `fetch` 和 `scanner` 平级，二者都经由 catalog 写入同一索引——这就是
@@ -68,24 +68,20 @@ enqueue(dedup_key) → pending → claim(原子 UPDATE, attempts+1) → running
 心跳的并发任务当死任务回收，造成同一任务被两个 worker 同时执行。单机中断
 后重跑同一命令即可：超过阈值的 running 任务自动回到 pending 并被续跑。
 
-## 可复现实验层（`experiments/` + `src/dbas/repro/`）
+## 与下游实验仓的边界
 
-实验代码不再放在 `scripts/` 的一次性脚本里，而是按实验分目录、配置驱动：
+本仓只管到「数据资产可定位、可校验、可恢复」为止。**科研实验、物理量计算与绘图
+不在本仓**，它们在独立的 Hydroweave 实验仓：
 
-- `experiments/<name>/config.yaml` 声明 catalog、`volume_id`、`dataset_id`、
-  年份、区域、时次、物理阈值与输出目录；机器专属路径只出现在配置里。
-- `scripts/` 只留可执行入口，按用途分三类：`analysis/`（实验命令行包装，
-  转发到 `experiments/`）、`demo/`（合成数据与 fixture）、`dev/`（独立验收等
-  维护脚本）。约定见 `scripts/README.md`，业务逻辑一律不写进脚本。
-- `src/dbas/repro/manifest.py` 提供 `config_hash`（规范化 JSON 的 SHA-256
-  前 16 位）、`input_fingerprint`（catalog 的卷 ID + 相对路径 + 大小 + mtime，
-  排序后哈希，不扫 2TB 内容）、`git_revision`/`package_versions` 环境快照，
-  以及 `atomic_write_text/json`（同目录 `.part` + `os.replace`）。
-- 运行目录 `data/analysis/<exp>/runs/<run_id>/` 内按 `yearly/ tables/
-  figures/ summary/` 分层；年度结果先写 `.part` 再原子替换，成功后立刻更新
-  manifest 的 `completed_years` 与产物 SHA-256。重启后跳过已完成年份。
-- 配置哈希与输入指纹变化时，同 `--run-id` 直接拒绝续跑（必须换 run-id 或
-  `--force`），避免不同口径的产物混在同一清单下。
+- 实验通过 catalog 做**只读**查询（`volume_id` + `dataset_id` → 文件清单与
+  逻辑指纹），不写 catalog、不改原始卷；
+- 每个实验的配置、口径、产物清单（`manifest.json`）由实验仓自己负责，
+  本仓不承担运行清单能力；
+- 需要比特级完整性证据时，由本仓 `dbas checksum` 分批生成 catalog 校验和，
+  实验仓只引用结果。
+
+这样拆分的目的：资产层的提交历史只记录数据管理能力的变化；数据口径与物理口径
+各自有唯一的责任方，不会互相稀释。
 
 ## 数据库备份
 
@@ -103,9 +99,8 @@ enqueue(dedup_key) → pending → claim(原子 UPDATE, attempts+1) → running
 
 ## 测试策略
 
-全部使用合成 NetCDF（`tests/conftest.py: make_nc`）与合成实验卷
-（`scripts/demo/make_tp_cloud_water_fixture.py`），不依赖真实数据、外接盘或
-网络；fetch 用注入的假客户端（`CLIENT_FACTORY`）。覆盖：幂等、预算中断恢复、
-损坏文件隔离、卷离线不误删、原子认领、陈旧任务回收与 `stale_running_s` 语义、
-资源判断纯函数、CLI 全流程、manifest 哈希/指纹/原子写、在线备份校验与失败清理、
-云水代理实验的 EDA→manifest→断点续跑→制图全链路。
+全部使用合成 NetCDF（`tests/conftest.py: make_nc`）与合成数据卷
+（`scripts/demo/`），不依赖真实数据、外接盘或网络；fetch 用注入的假客户端
+（`CLIENT_FACTORY`）。覆盖：幂等、预算中断恢复、损坏文件隔离、卷离线不误删、
+原子认领、陈旧任务回收与 `stale_running_s` 语义、资源判断纯函数、CLI 全流程、
+在线备份校验与失败清理。科研实验链路由 Hydroweave 实验仓自带测试。

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import cftime  # noqa: F401  netCDF4 依赖，保证日历解码可用
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC
 
 import netCDF4
 import numpy as np
@@ -158,8 +158,8 @@ def _extract_time(ds, result: ParseResult) -> None:
         if len(times) == 0:
             result.warnings.append("时间坐标解码为空")
             return
-        result.time_min = times[0].replace(tzinfo=timezone.utc).isoformat()
-        result.time_max = times[-1].replace(tzinfo=timezone.utc).isoformat()
+        result.time_min = times[0].replace(tzinfo=UTC).isoformat()
+        result.time_max = times[-1].replace(tzinfo=UTC).isoformat()
     except Exception as e:  # noqa: BLE001 单位/日历问题种类多，统一记警告
         result.warnings.append(f"时间解码失败（units/calendar 问题）：{type(e).__name__}: {e}")
 

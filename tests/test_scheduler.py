@@ -1,10 +1,9 @@
 """scheduler 测试：预算、重试、断点续跑、陈旧任务回收、资源判断。"""
 from __future__ import annotations
 
-import pytest
 
 from dbas.resource_guard.guard import ResourceGuard, ResourceSample, decide
-from dbas.scheduler.runner import Runner, RunContext
+from dbas.scheduler.runner import Runner
 
 
 class FlakyHandler:

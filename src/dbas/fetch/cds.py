@@ -19,7 +19,8 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import yaml
 
@@ -80,7 +81,7 @@ class FetchConfig:
     chunk_days: int = 1                      # split_by=day 时每批天数；按 CDS 成本上限取 5
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "FetchConfig":
+    def from_yaml(cls, path: Path) -> FetchConfig:
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as e:

@@ -18,8 +18,7 @@ from dbas.storage.backup import backup_database
 from dbas_core.exceptions import DbasError
 from dbas_core.logging import get_logger, setup_logging
 from dbas.resource_guard.guard import ResourceGuard
-from dbas.scheduler.runner import Handler, Runner, RunContext
-from dbas.scanner import scan as scanner_mod
+from dbas.scheduler.runner import Handler, Runner
 from dbas.scanner.scan import (ScanStats, checksum_one, scan_inventory,
                                scan_metadata_one, verify_one)
 
@@ -672,7 +671,7 @@ def cmd_zarr(args, cfg) -> int:
 def _estimate_files(ds, plan) -> int:
     """粗估分块后的 chunk 文件数（不含坐标数组与元数据）。"""
     n = 0
-    for name, var in ds.data_vars.items():
+    for _name, var in ds.data_vars.items():
         if not var.dims:
             continue
         c = 1

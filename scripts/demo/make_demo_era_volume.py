@@ -95,7 +95,7 @@ def main() -> int:
     for i in range(n_months):
         sp = specs[i % len(specs)]
         month = 1 + i
-        p = make_file(root / f"2010" / f"era5_daily_2010{month:02d}.nc",
+        p = make_file(root / "2010" / f"era5_daily_2010{month:02d}.nc",
                       month=month, nt=6, **sp)
         print(f"  {p}  (lat {'降' if sp['lat_desc'] else '升'}序, "
               f"lon {'0-360' if sp['lon_360'] else '-180-180'})")

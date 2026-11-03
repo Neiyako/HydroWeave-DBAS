@@ -14,7 +14,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
 
 from dbas_core.catalog.repository import Catalog, VolumeOffline
 from dbas_core.logging import get_logger

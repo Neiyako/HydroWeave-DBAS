@@ -18,7 +18,6 @@
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import dask
@@ -163,7 +162,6 @@ def reconcile_store(params: dict, catalog: Catalog, ctx=None, *, cfg) -> dict:
     回答的问题：这个数组层条目是否被外部改动过（重新运行导出、手工删 chunk、
     网盘同步冲突）。不改 catalog 结论，只产出证据。
     """
-    zcfg = cfg.section("zarr")
     rel = params["rel_path"]
     root = Path(cfg.array_dir) / rel
     man = scan_store(root)

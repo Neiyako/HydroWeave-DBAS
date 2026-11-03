@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支的新提交会取消上一轮未完成的运行，省 runner 时间
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ruff
+        run: python -m pip install --upgrade pip ruff
+      - name: Ruff check
+        run: ruff check src tests scripts
+
+  test:
+    name: Test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        # 装全部 extras：测试覆盖 fetch、subset(eda) 与数组层(zarr)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev,eda,zarr,fetch]'
+
+      - name: Show environment
+        run: |
+          python -V
+          python -m pip list
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  smoke:
+    name: CLI 冒烟（安装后真实可用）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 按部署文档安装
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e '.[dev,zarr]'
+
+      - name: CLI 可启动
+        # 必须用 ./bin/dbas：它带 PYTHONPATH=src，不依赖 editable 的 .pth
+        run: ./bin/dbas --help
+
+      - name: 端到端：合成数据 → 扫描 → 解析 → 报告
+        run: |
+          .venv/bin/python scripts/demo/make_demo_volume.py
+          ./bin/dbas volume register data/demo_volume --id demo
+          ./bin/dbas scan --volume demo --mode inventory --enqueue-metadata
+          ./bin/dbas scan --volume demo --mode metadata
+          ./bin/dbas status
+          ./bin/dbas report inventory
+          ./bin/dbas db check
+          ./bin/dbas db backup
+
+      - name: 校验解析结果确实写入
+        # 防止"命令退出码 0 但什么都没做"的假绿。
+        # 必须放在 Zarr 派生之前：数组层会把每个 store 也登记成一条
+        # arrays 卷的文件记录，届时总数不再是 5。
+        run: |
+          .venv/bin/python - <<'PY'
+          import sqlite3
+          con = sqlite3.connect("data/catalog.db")
+          total = con.execute(
+              "SELECT COUNT(*) FROM files WHERE volume_id='demo'").fetchone()[0]
+          parsed = con.execute(
+              "SELECT COUNT(*) FROM files "
+              "WHERE volume_id='demo' AND parse_status='parsed'").fetchone()[0]
+          print(f"demo卷 files={total} parsed={parsed}")
+          assert total == 5, f"应登记 5 个合成文件，实际 {total}"
+          assert parsed == 5, f"应全部解析成功，实际 {parsed}"
+          print("OK")
+          PY
+
+      - name: 端到端：Zarr 数组层与清单对账
+        run: |
+          ./bin/dbas zarr enqueue --volume demo --target point_series
+          ./bin/dbas zarr run
+          ./bin/dbas zarr info
+          # 逐个 verify 全部 store，任何一个不一致即失败
+          ./bin/dbas zarr info | grep -o '[a-z_]*/2023/[^ ]*\.zarr' | while read -r s; do
+            echo "verify $s"
+            ./bin/dbas zarr verify --store "$s" | grep -q "✔ 一致"
+          done
+          echo "全部 store 清单一致"
+
+      - name: 校验数组层已登记回 catalog
+        run: |
+          .venv/bin/python - <<'PY'
+          import sqlite3
+          con = sqlite3.connect("data/catalog.db")
+          n = con.execute(
+              "SELECT COUNT(*) FROM files WHERE volume_id='arrays'").fetchone()[0]
+          print(f"arrays卷 store 条目={n}")
+          assert n == 5, f"应有 5 个 store 条目，实际 {n}"
+          algo = con.execute(
+              "SELECT DISTINCT fingerprint_algo FROM files "
+              "WHERE volume_id='arrays'").fetchall()
+          print("指纹算法:", algo)
+          assert algo and all(a[0] == "manifest-sha256" for a in algo), algo
+          print("OK")
+          PY
+
+
+  deployment-docs:
+    name: 部署文档可执行性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: setup.sh 语法与帮助
+        run: |
+          bash -n scripts/setup.sh
+          ./scripts/setup.sh --help
+
+      - name: setup.sh 一键部署（与用户首次安装一致）
+        run: ./scripts/setup.sh --with-zarr
+
+      - name: 部署后自检
+        run: |
+          ./bin/dbas --help
+          .venv/bin/python scripts/demo/make_demo_volume.py
+          ./bin/dbas volume register data/demo_volume --id demo
+          ./bin/dbas scan --volume demo --mode inventory --enqueue-metadata
+          ./bin/dbas scan --volume demo --mode metadata
+
+      - name: 部署后跑全量测试
+        # 测试覆盖 fetch/eda/zarr 三条可选链路，需要全部 extras；
+        # setup.sh --with-zarr 只装 zarr，这里补齐其余，避免因缺 cdsapi 而假红。
+        run: |
+          .venv/bin/python -m pip install -e '.[dev,eda,zarr,fetch]'
+          .venv/bin/python -m pytest -q

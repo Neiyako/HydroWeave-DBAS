@@ -9,7 +9,6 @@ import json
 import sqlite3
 import time
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,7 @@ def make_file_id(volume_id: str, rel_path: str) -> str:
 
 def _d(row) -> dict[str, Any]:
     """sqlite3.Row → dict（Row 不能直接 dict()）。"""
-    return dict(zip(row.keys(), row))
+    return dict(zip(row.keys(), row, strict=True))
 
 
 # --------------------------------------------------------------------------
@@ -265,7 +264,6 @@ class Catalog:
                             lon: tuple[float, float] | None,
                             variables: list[dict[str, Any]],
                             dimensions: list[dict[str, Any]]) -> None:
-        now = _now()
         with self.conn:
             self.conn.execute(
                 """UPDATE files SET parse_status='parsed', parse_error=NULL,

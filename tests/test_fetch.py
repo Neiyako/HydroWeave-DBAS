@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from dbas.fetch.cds import (FetchConfig, CLIENT_FACTORY, download_one,
+from dbas.fetch.cds import (FetchConfig, download_one,
                             enqueue_fetch_tasks, ensure_download_volume,
                             request_dedup_key)
 from dbas_core.exceptions import FetchError

@@ -86,7 +86,7 @@ def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
     nc_exts = {e.lower() for e in (netcdf_extensions or extensions)}
     stats = ScanStats()
     seen_rel_paths: set[str] = set()
-    for rel, full, st in _iter_files(root, extensions, exclude_dirs):
+    for rel, _full, st in _iter_files(root, extensions, exclude_dirs):
         seen_rel_paths.add(rel)
         stats.seen += 1
         file_id, changed = catalog.upsert_file(
@@ -126,7 +126,8 @@ def scan_inventory(catalog: Catalog, volume_id: str, extensions: list[str],
 
 def scan_metadata_one(params: dict, catalog: Catalog, ctx=None) -> dict:
     """解析单个文件的 NetCDF 元数据并写库。返回结果摘要。"""
-    if ctx: ctx.heartbeat()
+    if ctx:
+        ctx.heartbeat()
     root = catalog.resolve_volume_root(params["volume_id"])
     path = root / params["rel_path"]
     try:
@@ -154,7 +155,8 @@ def scan_metadata_one(params: dict, catalog: Catalog, ctx=None) -> dict:
 
 def verify_one(params: dict, catalog: Catalog, ctx=None) -> dict:
     """验证文件当前可读性（打开并读取首块）。只读，不改内容。"""
-    if ctx: ctx.heartbeat()
+    if ctx:
+        ctx.heartbeat()
     root = catalog.resolve_volume_root(params["volume_id"])
     path = root / params["rel_path"]
     try:
@@ -176,7 +178,8 @@ def verify_one(params: dict, catalog: Catalog, ctx=None) -> dict:
 
 def checksum_one(params: dict, catalog: Catalog, ctx=None) -> dict:
     """流式计算 sha256（分块读取，内存占用恒定 ≈ 1MB）。"""
-    if ctx: ctx.heartbeat()
+    if ctx:
+        ctx.heartbeat()
     root = catalog.resolve_volume_root(params["volume_id"])
     path = root / params["rel_path"]
     h = hashlib.sha256()

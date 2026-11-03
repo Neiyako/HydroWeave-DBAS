@@ -35,7 +35,7 @@ zarr = [
     "dask[array]>=2024.1",
     "zarr>=3.0",
 ]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.9"]
 
 [project.scripts]
 dbas = "dbas.cli:main"
@@ -47,3 +47,17 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+
+[tool.ruff]
+# 规则集刻意保守：只查真实缺陷与可读性问题，不查风格偏好
+# （行宽、引号、导入顺序等交给编辑器，避免 CI 因风格噪音长期变红）。
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP"]
+ignore = [
+    # 测试里常常故意写等号比较的字面量在左侧等写法，CI 不应因此变红
+    "E501",
+]
+

@@ -9,7 +9,8 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 _SECRET = re.compile(r"authorization|cookie|set-cookie|api[-_]?key|token|secret|password|credential", re.I)
 
@@ -36,7 +37,7 @@ class CaptureConfig:
     capture_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "CaptureConfig":
+    def from_yaml(cls, path: Path) -> CaptureConfig:
         import yaml
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return cls(Path(raw.get("output", "data/captures")).expanduser(), int(raw.get("max_body_bytes", 16384)))

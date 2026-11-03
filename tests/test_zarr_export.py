@@ -150,7 +150,7 @@ def test_unknown_target_is_rejected(layered_ds):
 def test_chunk_bytes_estimate_is_per_variable(layered_ds):
     est = estimate_chunk_bytes(layered_ds, plan_chunks(layered_ds, "field_series"))
     assert set(est) == {"t", "q"}
-    for v, b in est.items():
+    for _v, b in est.items():
         assert b > 0
         assert b <= TARGET_CHUNK_ELEMENTS * 4 + 4096  # f4 → itemsize 4
 
@@ -365,7 +365,8 @@ def test_two_targets_coexist_without_overwrite(env, layered_ds):
         assert np.array_equal(a["t"].values, b["t"].values)
         assert a["t"].chunks != b["t"].chunks
     finally:
-        a.close(); b.close()
+        a.close()
+        b.close()
 
 
 def test_task_reports_missing_source(env):

@@ -11,7 +11,7 @@ import hashlib
 import json
 import math
 import time
-from datetime import timezone
+from datetime import UTC
 from typing import Any
 
 import netCDF4
@@ -131,9 +131,9 @@ def _time_info(ds) -> dict[str, Any]:
             only_use_python_datetimes=True)
         if len(times):
             info["time_min"] = times[0].replace(
-                tzinfo=timezone.utc).isoformat()
+                tzinfo=UTC).isoformat()
             info["time_max"] = times[-1].replace(
-                tzinfo=timezone.utc).isoformat()
+                tzinfo=UTC).isoformat()
     except Exception as e:  # noqa: BLE001 非 ISO 日历/单位问题统一记日志
         log.warning("时间轴解码失败: %s", e)
     return info

@@ -107,7 +107,7 @@ def subset_dataset(src: Path, dst: Path, bbox: Bbox, *,
                 if not var.dims:
                     continue
                 cs = [min(sz, time_chunk) if str(d).lower() in TIME_NAMES else sz
-                      for d, sz in zip(var.dims, var.shape)]
+                      for d, sz in zip(var.dims, var.shape, strict=True)]
                 encoding[str(name)] = {"zlib": True, "complevel": complevel,
                                        "chunksizes": cs}
 

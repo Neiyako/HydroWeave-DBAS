@@ -26,3 +26,10 @@ configs/local*.yaml
 
 # 调研资料（IFS/文献 PDF 及其切片，约 20MB）与本地抓包产物，不入 Git
 .research/
+
+# 测试覆盖率数据
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/

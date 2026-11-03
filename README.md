@@ -303,7 +303,7 @@ configs/             系统配置、fetch 请求模板与依赖约束文件
 `stale_running_s` 语义）、fetch 管理链路、manifest 哈希/输入指纹/原子写、
 SQLite 在线备份与校验失败清理、dbas-core 的数据集识别/画像/QC/subset/云水代理
 公式，以及云水代理实验的「合成 fixture → EDA → manifest → 断点续跑 → 制图」
-全链路（`tests/test_tp_cloud_water_experiment.py`）。真实卷上另有 7 个
+全链路（`tests/test_tp_cloud_water_experiment.py`）。真实卷上另有 9 个
 `-m real` 用例：catalog 与盘上文件一致、736 天季节覆盖、单日物理区间、
 单柱 PW 独立重算、真实 run 产物与 manifest 回归（`test_tp_cloud_water_real.py`）。
 

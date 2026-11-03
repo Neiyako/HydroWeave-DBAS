@@ -25,7 +25,9 @@
   （`sqlite3 data/catalog.db "DELETE FROM tasks WHERE task_id='...'"`）后
   重跑扫描命令即可重新入队（dedup_key 含 mtime，文件没变也会重新入队的是
   新任务；详见 tests/test_scanner.py::test_incremental_only_enqueues_changed）。
-- 进程被强杀：`running` 任务在下次启动时自动回收为 `pending`。
+- 进程被强杀：`running` 任务的心跳停止，超过
+  `scheduler.stale_running_s`（默认 600 秒）后，下次启动自动回收为 `pending`。
+  阈值不要设为 0，否则会误回收仍在工作的并发任务。
 
 ## 资源保护的真实边界
 
@@ -40,7 +42,11 @@
 ## 数据库维护
 
 - 备份：`python -m dbas db backup`（SQLite 在线备份 API，可在使用中执行）。
+  备份先写同目录 `.part`，对副本跑 `integrity_check` + `foreign_key_check`，
+  通过后才原子替换目标文件；失败会删除临时文件、保留旧备份，不会留下半截文件。
 - 检查：`python -m dbas db check`（integrity_check + foreign_key_check）。
+- 恢复：停掉正在运行的 `dbas` 进程 → 把 `data/backups/catalog_<时间戳>.db`
+  拷回 `data/catalog.db`（连同删除同目录 `-wal`/`-shm`）→ `dbas status` 确认。
 - 重建：`db backup` → 移走 `data/catalog.db` → 重新注册卷并扫描。
   原始数据不受影响；唯一损失是任务历史，文件索引由原始文件重建。
 
@@ -58,10 +64,39 @@
 - 画像统计是抽样结果，不能替代单格/全量精确分析；规则命中会写入
   `quality_reports`，带证据 JSON 与 `needs_human` 标记，原始数据永远不被修改。
 
+## 可复现实验：云水代理 EDA
+
+实验层在 `experiments/`，产物在 `data/analysis/<exp>/runs/<run_id>/`。
+完整说明见 [`experiments/tp_cloud_water/README.md`](../experiments/tp_cloud_water/README.md)。
+
+```bash
+# 真实卷（先确认 /Volumes/Untitled 在线、catalog 已 scan）
+PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/eda.py \
+  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
+PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
+  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
+```
+
+- 中断（Ctrl-C、进程被杀、单日读取失败）后重跑同一命令即可：已完成年份在
+  `manifest.json` 里，直接跳过；每年产物先写 `.part` 再原子替换。
+- 配置或输入指纹（卷 ID/相对路径/大小/mtime）变化时，同 run-id 会报
+  「不一致」并拒绝续跑；换 `--run-id` 或显式 `--force`。
+- 检查完成状态：看 `manifest.json` 的 `status`/`completed_years`/
+  `failed_dates`，以及 `summary/tp_eda_summary.md`。
+- 没有外接盘时可用合成 fixture 验证链路（不联网、不花费用）：
+
+```bash
+.venv/bin/python scripts/demo/make_tp_cloud_water_fixture.py /tmp/tp_fixture --days 3
+PYTHONPATH=src:. .venv/bin/python -m experiments.tp_cloud_water.eda \
+  --config /tmp/tp_fixture/config.yaml --run-id fixture
+```
+
 ## 已声明的未实现项
 
-EDA、清洗、特征工程命令尚未提供；QC 目前是首版规则集，人工复核流程和
-更多物理一致性规则（如探空/再分析交叉检验）尚未实现。
+清洗、特征工程命令尚未提供；QC 目前是首版规则集，人工复核流程和更多物理
+一致性规则（如探空/再分析交叉检验）尚未实现。云水代理 EDA 已实现为
+`experiments/` 层，但仍是**代理指标**：本卷没有 clwc/ciwc/总云量，结果不能
+当作真云水含量。
 CDS 服务器排队时间不可控，fetch 不设硬超时，中断后重跑即可。
 
 ## 数据盘：`era5hd` = /Volumes/Untitled
@@ -83,8 +118,10 @@ CDS 服务器排队时间不可控，fetch 不设硬超时，中断后重跑即�
   `catalog_*.db` 是索引备份，恢复用 `cp` 覆盖 `data/catalog.db` 即可。
 - **启动用 `./bin/dbas`**，不要用 `.venv/bin/python -m dbas`：editable 安装依赖
   site-packages 里的 `.pth`，而 iCloud/同步代理会把 `.pth` 打上 macOS `hidden`
-  标志位，`site.py` 直接跳过它 → `No module named dbas`。启动器改用
-  `PYTHONPATH=src`，与该标志位无关。
+  标志位，Python 3.13 的 `site.py` 直接跳过它 → `No module named dbas`。启动器
+  改用 `PYTHONPATH=src`，与该标志位无关。若想修复 console script，可执行
+  `chflags nohidden .venv/lib/python3.13/site-packages/*.pth` 后重试
+  `.venv/bin/dbas --help`（本项目 2026-11-03 就是这样恢复的）。
 - **全量清单化**开关在 `configs/system.yaml`：`scan.inventory_extensions: ["*"]`
   收录所有文件；`scan.nc_extensions` 仍只决定哪些进元数据解析队列。
   `scan.exclude_dirs` 剪掉 `$RECYCLE.BIN`、`System Volume Information` 等卷级噪声

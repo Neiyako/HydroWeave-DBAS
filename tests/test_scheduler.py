@@ -204,3 +204,29 @@ def test_resource_guard_records_peak(tmp_path):
     d = g.check()
     assert not d.stop_new_tasks
     assert g.peak_rss_mb > 0
+
+
+def test_fresh_running_task_not_reclaimed_by_default(tmp_path):
+    """默认 stale_running_s=600：刚认领、心跳新鲜的任务不能被当成陈旧回收。"""
+    cat = _mk_cat(tmp_path)
+    tid, _ = cat.enqueue_task("t", {}, dedup_key="k")
+    assert cat.claim_task("worker-a")["task_id"] == tid
+    s = Runner(cat, {"t": FlakyHandler(0)}, budget_s=60, batch_limit=10,
+               retry_delay_s=0).run(types=["t"])
+    # 该任务仍在别的 worker 手里：本轮不应执行它，也不应把它改回 pending
+    assert s.succeeded + s.failed == 0
+    assert cat.get_task(tid)["status"] == "running"
+
+
+def test_stale_running_s_controls_reclaim(tmp_path):
+    """把阈值调小后，同一陈旧任务才会被回收并重新执行。"""
+    cat = _mk_cat(tmp_path)
+    tid, _ = cat.enqueue_task("t", {}, dedup_key="k")
+    assert cat.claim_task("worker-a")["task_id"] == tid
+    cat.conn.execute(
+        "UPDATE tasks SET heartbeat_at='2000-01-01T00:00:00' WHERE task_id=?", (tid,))
+    cat.conn.commit()
+    s = Runner(cat, {"t": FlakyHandler(0)}, budget_s=60, batch_limit=10,
+               retry_delay_s=0, stale_running_s=60).run(types=["t"])
+    assert s.succeeded == 1
+    assert cat.get_task(tid)["status"] == "succeeded"

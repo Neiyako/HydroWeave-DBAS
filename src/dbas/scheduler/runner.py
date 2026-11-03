@@ -63,6 +63,7 @@ class Runner:
                  *, budget_s: float, batch_limit: int,
                  guard: ResourceGuard | None = None,
                  retry_delay_s: float = 5.0,
+                 stale_running_s: float = 600.0,
                  resume: bool = True):
         self.catalog = catalog
         self.handlers = handlers
@@ -70,13 +71,14 @@ class Runner:
         self.batch_limit = batch_limit
         self.guard = guard
         self.retry_delay_s = retry_delay_s
+        self.stale_running_s = stale_running_s
         self.resume = resume
 
     def run(self, types: list[str] | None = None) -> RunSummary:
         summary = RunSummary(run_id=uuid.uuid4().hex[:12])
         start = time.time()
         if self.resume:
-            stale = self.catalog.reclaim_stale_tasks(stale_s=0)  # 单进程：回收全部 running
+            stale = self.catalog.reclaim_stale_tasks(stale_s=self.stale_running_s)
             if stale:
                 log.warning("回收 %d 个中断遗留的 running 任务: %s",
                             len(stale), ",".join(stale))

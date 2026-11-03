@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -15,6 +14,7 @@ from dbas_core.catalog.repository import Catalog, VolumeOffline
 from dbas_core.config import ensure_dirs, load_config
 from dbas_core.qc.rules import run_dataset_checks
 from dbas.reports.profile_qc import profile_qc_report
+from dbas.storage.backup import backup_database
 from dbas_core.exceptions import DbasError
 from dbas_core.logging import get_logger, setup_logging
 from dbas.resource_guard.guard import ResourceGuard
@@ -241,7 +241,8 @@ def cmd_profile(args, cfg) -> int:
             batch_limit=args.batch_size if args.batch_size is not None
             else pcfg["batch_size"],
             guard=ResourceGuard(res["max_rss_mb"], res["min_available_mb"]),
-            retry_delay_s=sched["retry_delay_s"], resume=True)
+            retry_delay_s=sched["retry_delay_s"],
+            stale_running_s=sched["stale_running_s"], resume=True)
         summary = runner.run(types=["profile_nc"])
         _print_summary(summary)
 
@@ -291,7 +292,8 @@ def _run_task_queue(cat: Catalog, cfg, types: list[str], args) -> None:
     runner = Runner(cat, handlers,
                     budget_s=args.budget if args.budget is not None else scan_budget(cfg),
                     batch_limit=args.batch_size if args.batch_size is not None else scan_batch(cfg),
-                    guard=guard, retry_delay_s=sched["retry_delay_s"], resume=True)
+                    guard=guard, retry_delay_s=sched["retry_delay_s"],
+                    stale_running_s=sched["stale_running_s"], resume=True)
     summary = runner.run(types=types)
     _print_summary(summary)
 
@@ -396,17 +398,10 @@ def cmd_db(args, cfg) -> int:
         return 0 if integrity == "ok" and not fk else 1
     if args.action == "backup":
         ensure_dirs(cfg)
-        with _open_catalog(cfg) as cat:
-            ts = time.strftime("%Y%m%d_%H%M%S")
-            dst = cfg.home / "backups" / f"catalog_{ts}.db"
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            # SQLite 在线备份 API，可在使用中安全复制
-            src = sqlite3.connect(str(cfg.db_path))
-            try:
-                src.backup(sqlite3.connect(str(dst)))
-            finally:
-                src.close()
-            print(f"已备份到 {dst}")
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        dst = cfg.home / "backups" / f"catalog_{ts}.db"
+        backup_database(cfg.db_path, dst)
+        print(f"已备份并校验到 {dst}")
         return 0
     if args.action == "rebuild":
         print("数据库重建：当前实现为「删除库文件后重新注册卷并扫描」。\n"
@@ -506,7 +501,8 @@ def cmd_subset(args, cfg) -> int:
                             else acfg["batch_size"],
                             guard=ResourceGuard(res["max_rss_mb"],
                                                 res["min_available_mb"]),
-                            retry_delay_s=sched["retry_delay_s"], resume=True)
+                            retry_delay_s=sched["retry_delay_s"],
+                            stale_running_s=sched["stale_running_s"], resume=True)
             summary = runner.run(types=["subset_nc"])
             _print_summary(summary)
         return 0
@@ -549,7 +545,8 @@ def cmd_fetch(args, cfg) -> int:
                             budget_s=args.budget if args.budget is not None else 3600,
                             batch_limit=args.batch_size if args.batch_size is not None else 1000,
                             guard=ResourceGuard(res["max_rss_mb"], res["min_available_mb"]),
-                            retry_delay_s=sched["retry_delay_s"], resume=True)
+                            retry_delay_s=sched["retry_delay_s"],
+                            stale_running_s=sched["stale_running_s"], resume=True)
             summary = runner.run(types=["download"])
             _print_summary(summary)
         return 0

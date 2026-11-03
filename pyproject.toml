@@ -6,9 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "dbas"
 version = "0.1.0"
 description = "DBAS: ERA5 科研数据管理与分析系统（Data Management and Analysis System）"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+# dbas-core 钉在已验证的 commit：默认分支变动不会悄悄改变科研口径。
+# 升级流程：本地验证 → 改这里的 commit → 重新 pip install -e . → 更新
+# configs/constraints-py313.txt 中的版本行。
 dependencies = [
-    "dbas-core @ git+https://github.com/Neiyako/dbas-core.git",
+    "dbas-core @ git+https://github.com/Neiyako/dbas-core.git@46b32f45de90bb9442df9c04e53c67b7c57b1c3a",
     "netCDF4>=1.7",
     "numpy>=1.26",
     "pandas>=2.1",
@@ -18,7 +21,15 @@ dependencies = [
 
 [project.optional-dependencies]
 fetch = ["cdsapi>=0.7"]
-eda = ["xarray>=2024.1", "matplotlib>=3.8", "dask[array]>=2024.1", "flox>=0.9"]
+# 实验层（experiments/tp_cloud_water）与 subset 需要：xarray/dask 读写，
+# matplotlib 制图，pyshp 读 shp 底图（import 名仍为 shapefile）。
+eda = [
+    "xarray>=2024.1",
+    "matplotlib>=3.8",
+    "dask[array]>=2024.1",
+    "flox>=0.9",
+    "pyshp>=2.3",
+]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

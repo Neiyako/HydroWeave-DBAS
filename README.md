@@ -29,9 +29,9 @@ DBAS（Data Management and Analysis System）面向个人科研工作流，管�
 ### 实际分析成果示例
 
 系统已用于青藏高原云水资源代理指标分析（2010–2013 年 5–10 月 ERA5 气压层
-t/q/u/v 数据，约 2TB 原始卷）。以下是真实产出的例图，由
-`scripts/tp_cloud_water_plot.py` 生成，算法口径见
-[dbas-core](https://github.com/Neiyako/dbas-core) 的 `cloud_water_proxy` 模块：
+t/q/u/v 数据，约 2TB 原始卷）。以下是真实产出的例图，由可复现实验层
+[`experiments/tp_cloud_water`](experiments/tp_cloud_water/) 生成；算法口径见
+该实验的 [`eda.py`](experiments/tp_cloud_water/eda.py) 模块注释：
 
 **年际对比**——高原主体 PW（可降水量）、RH500（中层饱和度）、CFRAC（云发生
 频率代理）的四年夏季平均空间分布与差异：
@@ -56,13 +56,15 @@ t/q/u/v 数据，约 2TB 原始卷）。以下是真实产出的例图，由
 > 口径说明：本卷 ERA5 只有 t/q/u/v，没有云水混合比（clwc/ciwc）与总云量，
 > 上述 PW/RH500/CFRAC 都是**代理指标**，不是真云水含量。地形以下填层按
 > 「等值连段」法反推地面气压并掩膜，避免地下层水汽被误积分。完整口径见
-> `scripts/tp_cloud_water_eda.py` 模块注释。
+> [`experiments/tp_cloud_water/eda.py`](experiments/tp_cloud_water/eda.py)。
 
 ---
 
 ## 二、安装
 
-需要 Python 3.10+。安装主包时会自动从 GitHub 拉取 `dbas-core` 算法库：
+需要 Python 3.11+。安装主包时会从 GitHub 拉取 `dbas-core` 算法库，并钉在
+已验证的 commit（见 `pyproject.toml`）；需要可审查的版本清单时另装
+`configs/constraints-py313.txt`：
 
 ```bash
 python3 -m venv .venv
@@ -86,11 +88,15 @@ python3 -m venv .venv
 dbas --help
 ```
 
-macOS 同步工具若导致 editable 安装的 `.pth` 失效，用备用入口：
+macOS 同步工具若导致 editable 安装的 `.pth` 失效（被加上 `hidden` 标志，
+Python 3.13 的 `site.py` 会跳过），优先修复标志位；不想修就用备用入口：
 
 ```bash
+chflags nohidden .venv/lib/python3.13/site-packages/*.pth
+.venv/bin/dbas --help
+
+# 备用入口（不依赖 .pth）
 PYTHONPATH=src .venv/bin/python -m dbas --help
-# 或
 ./bin/dbas --help
 ```
 
@@ -103,7 +109,7 @@ PYTHONPATH=src .venv/bin/python -m dbas --help
 ### 30 秒体验（合成数据，不联网）
 
 ```bash
-.venv/bin/python scripts/make_demo_volume.py        # 生成合成 NetCDF
+.venv/bin/python scripts/demo/make_demo_volume.py   # 生成合成 NetCDF
 dbas volume register data/demo_volume --id demo     # 注册卷
 dbas scan --volume demo --mode inventory --enqueue-metadata
 dbas scan --volume demo --mode metadata             # 解析 NetCDF 头
@@ -114,7 +120,7 @@ dbas status
 体验类 ERA5 全球逐日数据的区域裁切（需 `.[eda]`）：
 
 ```bash
-.venv/bin/python scripts/make_demo_era_volume.py data/era_like_volume 3
+.venv/bin/python scripts/demo/make_demo_era_volume.py data/era_like_volume 3
 dbas volume register data/era_like_volume --id eralike
 dbas scan --volume eralike --mode inventory --enqueue-metadata
 dbas scan --volume eralike --mode metadata
@@ -162,6 +168,29 @@ dbas fetch run --config configs/fetch/era5_demo.yaml
 
 下载成功后文件自动登记到 `downloads` 卷并入队元数据解析——之后的
 verify/checksum/metadata 流程与外接硬盘完全一致，这就是「下载测试管理链路」。
+
+### 可复现实验层：云水代理 EDA
+
+实验代码在 `experiments/<name>/`，配置驱动、按 `run-id` 分目录、年度断点续跑、
+产物带 SHA-256 清单。没有外接盘时先用合成 fixture 验证整条链路：
+
+```bash
+# 合成试验台（不联网、不接触真实卷）
+.venv/bin/python scripts/demo/make_tp_cloud_water_fixture.py /tmp/tp_fixture --days 3
+PYTHONPATH=src:. .venv/bin/python -m experiments.tp_cloud_water.eda \
+  --config /tmp/tp_fixture/config.yaml --run-id fixture
+PYTHONPATH=src:. .venv/bin/python -m experiments.tp_cloud_water.plot \
+  --config /tmp/tp_fixture/config.yaml --run-id fixture
+
+# 真实卷：先确认外接盘在线、catalog 已 scan，再用同一 run-id 计算和制图
+PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/eda.py \
+  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
+PYTHONPATH=src:. .venv/bin/python experiments/tp_cloud_water/plot.py \
+  --config experiments/tp_cloud_water/config.yaml --run-id tp-2010-2013
+```
+
+产物与恢复语义见 [`experiments/tp_cloud_water/README.md`](experiments/tp_cloud_water/README.md)，
+运维操作见 [`docs/operations.md`](docs/operations.md)。
 
 ### 任务与运维
 
@@ -211,17 +240,19 @@ catalog → core（配置、异常）
 
 ```text
 src/dbas/
-├── storage/         卷身份识别与挂载辅助
+├── storage/         卷身份识别、挂载辅助与 SQLite 在线备份
 ├── scanner/         inventory / incremental / metadata / verify / checksum
 ├── scheduler/       原子认领、预算、重试与陈旧任务回收
 ├── resource_guard/  RSS/可用内存软保护
+├── repro/           运行清单：配置哈希、输入指纹、原子写、产物指纹
 ├── fetch/           ERA5 CDS API 下载器
 ├── reports/         Markdown 报告生成
 └── cli.py           统一命令入口
-scripts/             合成数据与实验性分析脚本
+experiments/         配置驱动的可复现实验层（tp_cloud_water = 云水代理 EDA）
+scripts/             兼容入口薄包装；scripts/demo/ = 合成数据与 fixture 生成器
 tests/               合成数据测试（默认不联网、不依赖真实 ERA5 卷）
 docs/                架构说明、运行手册与例图
-configs/             系统配置与 fetch 请求模板
+configs/             系统配置、fetch 请求模板与依赖约束文件
 ```
 
 算法与存储层在 [dbas-core](https://github.com/Neiyako/dbas-core)：
@@ -262,8 +293,11 @@ configs/             系统配置与 fetch 请求模板
 .venv/bin/python -m pytest tests/test_scanner.py -k incremental
 ```
 
-覆盖范围：CLI 全命令、扫描器各模式、任务调度（认领/预算/重试/陈旧回收）、
-fetch 管理链路、dbas-core 的数据集识别/画像/QC/subset/云水代理公式。
+覆盖范围：CLI 全命令、扫描器各模式、任务调度（认领/预算/重试/陈旧回收与
+`stale_running_s` 语义）、fetch 管理链路、manifest 哈希/输入指纹/原子写、
+SQLite 在线备份与校验失败清理、dbas-core 的数据集识别/画像/QC/subset/云水代理
+公式，以及云水代理实验的「合成 fixture → EDA → manifest → 断点续跑 → 制图」
+全链路（`tests/test_tp_cloud_water_experiment.py`）。
 
 ---
 
@@ -275,7 +309,8 @@ fetch 管理链路、dbas-core 的数据集识别/画像/QC/subset/云水代理�
 - [x] 阶段 4b 首版：内容画像与 QC 证据
 - [x] 核心算法拆分至 dbas-core 独立仓库
 - [ ] 阶段 4b 完整：更多 QC 规则、累计量/瞬时量判别和人工复核
-- [ ] 阶段 4c：通用气候态、季节循环、海拔分层统计与图表
+- [x] 阶段 4c 首版：云水代理 EDA 移到 `experiments/`，配置驱动 + run 清单 + 断点续跑 + 分年制图
+- [ ] 阶段 4c 完整：更多气候态/季节循环指标、跨实验统一对比
 - [ ] 阶段 5：非破坏性清洗、特征工程、Parquet 导出与建模接口
 - [ ] 阶段 3 强化：危险解析的子进程隔离与父进程超时监控
 

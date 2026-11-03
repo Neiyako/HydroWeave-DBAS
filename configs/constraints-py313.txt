@@ -1,0 +1,18 @@
+# 已在本机验证过的实验环境依赖（Python 3.13 / macOS arm64）。
+# 用途：复现实验时 `pip install -r configs/constraints-py313.txt`，
+# 或与 `pip install -e '.[dev,eda,fetch]'` 组合以锁定版本。
+# 更新方式：升级后跑 `pytest` 与合成 fixture 全流程，确认通过再改版本号。
+cdsapi==0.7.7
+cftime==1.6.6.1
+dask==2026.8.0
+flox==0.11.2
+matplotlib==3.11.2
+netCDF4==1.7.5.1.post1
+numpy==2.5.4
+pandas==3.1.0
+pyshp==3.1.6
+pytest==9.2.0
+PyYAML==6.0.3
+scipy==1.18.1
+xarray==2026.9.0
+# dbas-core 用 Git commit 钉版本，见 pyproject.toml 的 dependencies。

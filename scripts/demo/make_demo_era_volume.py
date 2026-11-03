@@ -5,7 +5,7 @@
   文件1: 纬度降序、经度 -180..180（ERA5 grid 原始排布）
   文件2: 纬度降序、经度 0..359（GRIB 传统约定）
 
-用法: .venv/bin/python scripts/make_demo_era_volume.py [目标目录] [月数]
+用法: .venv/bin/python scripts/demo/make_demo_era_volume.py [目标目录] [月数]
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 import netCDF4
 import numpy as np
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
 FILL = np.float32(9.96921e36)

@@ -81,6 +81,9 @@ data/analysis/tp_cloud_water/runs/<run_id>/
 - 配置哈希或输入指纹（卷 ID、相对路径、大小、mtime）变化时，同 run-id 直接
   报错，避免把两套配置的产物混在一个目录；换 `--run-id` 或 `--force`。
 - `plot.py` 只画已完成年份，并把图件/摘要指纹登记回 manifest。
+- 某年即使有个别日期读取/计算失败，只要年度产物写出仍会记入 `completed_years`，
+  失败明细在 `tables/tp_read_problems_<year>.csv`（manifest 的 `failed_dates`
+  汇总）。要重算这一年并重试失败日期，用 `--force`；否则续跑会跳过它。
 
 ## 复现边界
 

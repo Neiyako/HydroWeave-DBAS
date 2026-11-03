@@ -1,13 +1,13 @@
 """生成一个合成 ERA5 风格的数据卷（用于演示与测试，不触碰真实数据）。
 
-用法: .venv/bin/python scripts/make_demo_volume.py [目标目录] [文件数]
+用法: .venv/bin/python scripts/demo/make_demo_volume.py [目标目录] [文件数]
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 sys.path.insert(0, str(_ROOT))
 

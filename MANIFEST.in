@@ -1,0 +1,13 @@
+include LICENSE
+include README.md
+include README.en.md
+include CHANGELOG.md
+include CITATION.cff
+include CONTRIBUTING.md
+include SECURITY.md
+include CODE_OF_CONDUCT.md
+include pyproject.toml
+recursive-include configs *.yaml *.txt
+recursive-include docs *.md
+recursive-exclude src/dbas_core __pycache__
+global-exclude *.py[cod] __pycache__ .DS_Store

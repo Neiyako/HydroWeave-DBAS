@@ -1,0 +1,24 @@
+# DBAS ← ResearchDataHub（RDH）交付导入配置：重放/恢复通道
+#
+# 场景：CDS 服务端生成阶段长时间排队（保护性限流）时，RDH 用「已存在的真实产物 URL」
+# 建立计划（scripts/plan_from_external_urls.py），传输/完整性/交付链路仍是真的；
+# 本配置把该计划产出的交付清单导入 DBAS。
+#
+# 运行（DBAS 项目根）：
+#   ./bin/dbas fetch rdh --config configs/fetch/rdh_replay_sample.yaml \
+#       --plan-id <RDH plan_id> --capture-dir data/captures/rdh_clwc_ciwc
+rdh_repo: /Users/apple/Desktop/ResearchDataHub
+rdh_python: /Users/apple/Desktop/ResearchDataHub/.venv/bin/python
+request_file: examples/era5-clwc-ciwc-tp-replay-2024-01-01.yaml
+
+storage_root: ~/.rdh
+
+target_dir: data/downloads
+volume_id: downloads
+dataset_id: era5_cloud_water
+dataset_label: ERA5 云水混合比（clwc/ciwc）
+dataset_description: 经 ResearchDataHub 传输与完整性校验后导入的 ERA5 云水混合比交付文件（重放/恢复通道）
+
+capture_dir: data/captures/rdh_clwc_ciwc
+
+timeout_s: 5400

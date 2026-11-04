@@ -230,6 +230,7 @@ SQLite catalog ── 扫描 / 解析 / 校验 / 画像 / QC
 | `dbas db check/backup/rebuild` | 数据库完整性 / 在线备份 / 重建 |
 | `dbas report inventory` | Markdown 运维报告 |
 | `dbas fetch plan/enqueue/run` | CDS 下载管理 |
+| `dbas fetch rdh` | 从 ResearchDataHub 交付清单导入（采集端→资产端对接，见 [三端对接](docs/three-end-integration.md)） |
 
 所有命令均支持 `--help`。
 
@@ -261,6 +262,22 @@ CI 五个 job：
 - **Test**：Python 3.11 / 3.12 / 3.13 矩阵，带 80% 覆盖率门槛；
 - **Smoke**：按部署文档安装后跑真实端到端，并用 SQLite 断言解析结果确实写入，防止"退出码 0 但什么都没做"的假绿；
 - **部署文档可执行性**：`setup.sh` 一键部署后跑全量测试。
+
+## 三端对接（ResearchDataHub → DBAS → Hydroweave）
+
+DBAS 增加 `dbas fetch rdh`：从 [ResearchDataHub](https://github.com/Neiyako/ResearchDataHub)
+的交付清单导入数据（plan → task run → 交付清单 SHA-256 复核 → 原子拷贝 → catalog 登记 →
+`scan_metadata` 入队 → 脱敏抓包事件），让采集端的证据（交付清单）与资产端的事实（catalog）
+串成一条链，科学端（[HydroWeave](https://github.com/Neiyako/HydroWeave)）再按
+`volume_id + dataset_id` 直接消费 catalog。
+
+![三端 e2e：RA5 clwc/ciwc 液水柱含量](docs/img/three_end_e2e_lwp.png)
+
+2026-11-04 实测（`run-id=real-catalog-20240101`，判定 **PASS**）：RDH 传输/完整性/交付 →
+DBAS 导入并解析出 `clwc`/`ciwc` → Hydroweave 算出 LWP/IWP 并出 5 张图；三方 SHA-256
+一致（`d1b96325…4cc39`）。完整证据与"CDS 服务端队列阻塞、本次走 RDH 重放通道"的如实说明见
+[`docs/evidence/three-end-e2e-20261104.md`](docs/evidence/three-end-e2e-20261104.md)
+与 [`docs/three-end-integration.md`](docs/three-end-integration.md)。
 
 ## 边界与已知限制
 

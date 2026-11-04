@@ -1,0 +1,39 @@
+# DBAS ← ResearchDataHub（RDH）交付导入示例配置。
+#
+# 用途：把 RDH 从 CDS 采集并校验过的 ERA5 云水混合比样本（clwc/ciwc，青藏高原，
+# 2024-01-01 00 UTC，500/400/300 hPa 三层）导入 DBAS 的 downloads 卷，并登记为
+# era5_cloud_water 数据集 + 入队 scan_metadata。
+#
+# 运行（在 DBAS 项目根）：
+#   ./bin/dbas fetch rdh --config configs/fetch/rdh_sample.yaml
+#   ./bin/dbas fetch rdh --config configs/fetch/rdh_sample.yaml --dry-run   # 只看命令
+#
+# 说明：
+# - RDH 的 console script 已坏，rdh_python 只负责执行
+#   `python -m researchdatahub.cli.main ...`（DBAS 自动带 PYTHONPATH=src，cwd=rdh_repo）。
+# - RDH 原始交付文件在 storage_root/raw/ 下（0444 只读），这里只读取并拷副本，
+#   绝不修改或移动 RDH 产物。
+# - CDS 凭据由 RDH 自己从 ~/.cdsapirc 解析；本配置不包含、也不打印任何凭据。
+# - request_file 相对 rdh_repo 解析（也可写绝对路径或项目根相对路径）。
+rdh_repo: /Users/apple/Desktop/ResearchDataHub
+rdh_python: /Users/apple/Desktop/ResearchDataHub/.venv/bin/python
+request_file: examples/era5-clwc-ciwc-tp-2024-01-01.yaml
+
+# RDH 的 storage.root（交付清单在 <storage_root>/deliveries/，原始文件在 raw/ 下）
+storage_root: ~/.rdh
+
+# DBAS 侧落点：data/downloads/<dataset_id>/<文件名>
+target_dir: data/downloads
+volume_id: downloads
+dataset_id: era5_cloud_water
+dataset_label: ERA5 云水混合比（clwc/ciwc）
+dataset_description: 经 ResearchDataHub 从 CDS 采集、SHA-256 校验后导入的 ERA5 云水混合比交付文件
+
+# 脱敏事件流（rdh_plan / rdh_task / rdh_delivery / import）
+capture_dir: data/captures/rdh_clwc_ciwc
+
+# 单条 RDH 子进程命令超时（秒）；plan/task/report 各自计时
+timeout_s: 5400
+
+# 可选：复用已存在的计划，跳过 plan create（例如上次 task run 中断后继续）
+# plan_id: plan-xxxxxxxx

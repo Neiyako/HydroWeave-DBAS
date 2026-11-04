@@ -685,6 +685,31 @@ def _estimate_files(ds, plan) -> int:
 
 def cmd_fetch(args, cfg) -> int:
     from dbas.fetch.cds import FetchConfig, download_one, enqueue_fetch_tasks, ensure_download_volume
+    if args.action == "rdh":
+        # 从 ResearchDataHub 交付清单导入：plan create→task run→report generate
+        # → 校验+原子拷贝 → catalog 登记。真实联网下载由 RDH 子进程完成。
+        from dbas.fetch.rdh import RdhFetchConfig, run_rdh_fetch
+        rcfg = RdhFetchConfig.from_yaml(Path(args.config).expanduser())
+        if args.plan_id:
+            rcfg.plan_id = args.plan_id
+        capture_override = (Path(args.capture_dir).expanduser()
+                            if args.capture_dir else None)
+        if args.dry_run:
+            plan = run_rdh_fetch(None, rcfg, cfg.root, dry_run=True)
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return 0
+        with _open_catalog(cfg) as cat:
+            import_summary = run_rdh_fetch(cat, rcfg, cfg.root,
+                                           capture_dir=capture_override)
+        print(f"计划 {import_summary['plan_id']} | "
+              f"请求 {import_summary['request_id']} | "
+              f"交付 {import_summary['delivery']}")
+        print(f"导入 {import_summary['imported']} 个，"
+              f"跳过 {import_summary['skipped']} 个，"
+              f"新入队 scan_metadata {import_summary['tasks_created']} 个 → "
+              f"{import_summary['dataset_dir']}")
+        print(json.dumps(import_summary, ensure_ascii=False))
+        return 0
     if args.action == "capture":
         from dbas.fetch.capture import CaptureConfig
         fcfg = FetchConfig.from_yaml(Path(args.config).expanduser())
@@ -904,6 +929,14 @@ def build_parser() -> argparse.ArgumentParser:
     rep = fsub.add_parser("report", help="离线分析捕获事件")
     rep.add_argument("--capture-dir", required=True)
     rep.add_argument("--output", default="data/reports")
+    rdh = fsub.add_parser("rdh", help="从 ResearchDataHub 交付清单导入（子进程驱动）")
+    rdh.add_argument("--config", required=True, help="rdh fetch 配置 YAML 路径")
+    rdh.add_argument("--capture-dir", default=None,
+                     help="事件 JSONL 输出目录（可选，覆盖配置 capture_dir）")
+    rdh.add_argument("--plan-id", default=None,
+                     help="复用已存在的 RDH 计划 ID（跳过 plan create）")
+    rdh.add_argument("--dry-run", action="store_true",
+                     help="只校验配置并打印将执行的命令，不联网、不写库")
     return p
 
 

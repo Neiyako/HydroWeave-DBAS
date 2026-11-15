@@ -363,6 +363,8 @@ def test_rdh_command_error_propagates(rdh_env, cat):
 
 def test_default_runner_reports_nonzero_exit(rdh_env, cat):
     """默认 subprocess 执行器：RDH 命令非零退出 → FetchError（不吞 stderr）。"""
+    if sys.platform == "win32":
+        pytest.skip("POSIX 专用：用 .venv/bin/python + shebang 脚本模拟 RDH CLI")
     script = _fake_cli_script(rdh_env, exit_code=2)
     cfg = rdh_env.config(rdh_python=str(script))
     with pytest.raises(FetchError, match="退出码 2"):
@@ -423,6 +425,8 @@ def test_cli_rdh_dry_run(rdh_env, capsys):
 
 def test_cli_rdh_import_end_to_end(rdh_env):
     """真 subprocess 跑假 RDH CLI：覆盖默认 runner、plan_id 解析、CLI 装配。"""
+    if sys.platform == "win32":
+        pytest.skip("POSIX 专用：用 .venv/bin/python + shebang 脚本模拟 RDH CLI")
     script = _fake_cli_script(rdh_env)
     rdh_env.config(rdh_python=str(script))
     rc = main(["--project-root", str(rdh_env.project_root), "fetch", "rdh",

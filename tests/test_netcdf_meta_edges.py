@@ -52,7 +52,7 @@ class TestOpenFailures:
         with pytest.raises(NetcdfParseError):
             parse_netcdf_header(bad)
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root 无视文件权限")
+    @pytest.mark.skipif(os.name != "posix", reason="Windows 的 chmod 000 不阻止读取")
     def test_permission_denied(self, tmp_path):
         f = _minimal(tmp_path / "p.nc")
         f.chmod(0o000)

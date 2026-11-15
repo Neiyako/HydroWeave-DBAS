@@ -27,18 +27,23 @@ def backup_database(source_path: str | Path, destination_path: str | Path) -> Pa
     src_conn = sqlite3.connect(str(source), timeout=30)
     dst_conn = sqlite3.connect(str(temporary), timeout=30)
     try:
-        src_conn.backup(dst_conn)
-        dst_conn.commit()
-        integrity, foreign_keys = _check_connection(dst_conn)
-        if integrity != "ok" or foreign_keys:
-            raise sqlite3.DatabaseError(
-                f"备份校验失败: integrity={integrity}, foreign_keys={foreign_keys}")
+        try:
+            src_conn.backup(dst_conn)
+            dst_conn.commit()
+            integrity, foreign_keys = _check_connection(dst_conn)
+        finally:
+            # Windows 上 SQLite 连接未关闭时 .part 仍被锁定，无法删除/改名；
+            # 必须先关闭连接，再进行失败清理或 os.replace。
+            dst_conn.close()
+            src_conn.close()
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    finally:
-        dst_conn.close()
-        src_conn.close()
+
+    if integrity != "ok" or foreign_keys:
+        temporary.unlink(missing_ok=True)
+        raise sqlite3.DatabaseError(
+            f"备份校验失败: integrity={integrity}, foreign_keys={foreign_keys}")
 
     os.replace(temporary, destination)
     return destination

@@ -244,6 +244,19 @@ def test_config_from_yaml_defaults_and_override(rdh_env):
     assert cfg.request_file == Path("examples/era5-clwc-ciwc-tp-2024-01-01.yaml")
 
 
+def test_config_dataset_source_override(rdh_env):
+    """非 CDS 来源必须能覆盖旧默认值，避免 catalog 误标数据来源。"""
+    cfg = rdh_env.config(dataset_source="ResearchDataHub/NSF-NCAR-RDA")
+    assert cfg.dataset_source == "ResearchDataHub/NSF-NCAR-RDA"
+
+
+def test_import_preserves_explicit_dataset_source(rdh_env, cat):
+    cfg = rdh_env.config(dataset_source="ResearchDataHub/NSF-NCAR-RDA")
+    run_rdh_fetch(cat, cfg, rdh_env.project_root, runner=FakeRdh(rdh_env.storage_root))
+    datasets = {item["dataset_id"]: item for item in cat.list_datasets()}
+    assert datasets["era5_cloud_water"]["source"] == "ResearchDataHub/NSF-NCAR-RDA"
+
+
 def test_config_requires_repo_and_request_file(rdh_env):
     rdh_env.config_path.write_text("rdh_python: /usr/bin/python3\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="rdh_repo"):

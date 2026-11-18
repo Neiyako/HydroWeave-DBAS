@@ -83,6 +83,7 @@ class RdhFetchConfig:
     dataset_id: str = "era5_cloud_water"
     dataset_label: str = ""               # 空 = dataset_id
     dataset_description: str = ""
+    dataset_source: str = "ResearchDataHub/CDS"
     capture_dir: Path | None = None
     timeout_s: float = 5400.0
     plan_id: str | None = None            # 显式指定 = 复用已有计划，跳过 plan create
@@ -113,6 +114,7 @@ class RdhFetchConfig:
             dataset_id=str(raw.get("dataset_id") or "era5_cloud_water"),
             dataset_label=str(raw.get("dataset_label") or ""),
             dataset_description=str(raw.get("dataset_description") or ""),
+            dataset_source=str(raw.get("dataset_source") or "ResearchDataHub/CDS"),
             capture_dir=Path(str(capture)).expanduser() if capture else None,
             timeout_s=float(raw.get("timeout_s", 5400) or 5400),
             plan_id=str(plan).strip() if plan else None)
@@ -446,8 +448,8 @@ def run_rdh_fetch(catalog: Catalog | None, cfg: RdhFetchConfig, project_root: Pa
     catalog.ensure_dataset(
         cfg.dataset_id,
         cfg.dataset_label or cfg.dataset_id,
-        cfg.dataset_description or "由 ResearchDataHub 从 CDS 采集、SHA-256 校验后导入的交付文件",
-        source="ResearchDataHub/CDS")
+        cfg.dataset_description or "由 ResearchDataHub 采集、SHA-256 校验后导入的交付文件",
+        source=cfg.dataset_source)
 
     root_resolved = storage_root.resolve()
     imported = skipped = tasks_created = 0

@@ -77,6 +77,7 @@ class RdhFetchConfig:
     rdh_repo: Path
     request_file: Path
     rdh_python: str = ""                  # 空 = <rdh_repo>/.venv/bin/python
+    rdh_sources: Path | None = None       # 可选：显式 sources YAML，透传 --sources
     storage_root: Path = Path("~/.rdh")
     target_dir: str = "data/downloads"    # 相对项目根
     volume_id: str = "downloads"
@@ -108,6 +109,8 @@ class RdhFetchConfig:
             rdh_repo=Path(str(repo)).expanduser(),
             request_file=Path(str(request_file)).expanduser(),
             rdh_python=str(raw.get("rdh_python") or ""),
+            rdh_sources=(Path(str(raw["rdh_sources"])).expanduser()
+                         if raw.get("rdh_sources") else None),
             storage_root=Path(str(raw.get("storage_root") or "~/.rdh")).expanduser(),
             target_dir=str(raw.get("target_dir") or "data/downloads"),
             volume_id=str(raw.get("volume_id") or "downloads"),
@@ -358,6 +361,15 @@ def run_rdh_fetch(catalog: Catalog | None, cfg: RdhFetchConfig, project_root: Pa
     request_file = _resolve_request_file(cfg.request_file, project_root, rdh_repo)
     if not request_file.is_file():
         raise FetchError(f"RDH 需求文件不存在: {request_file}（rdh_repo={rdh_repo}）")
+    rdh_sources = (
+        _resolve_request_file(cfg.rdh_sources, project_root, rdh_repo)
+        if cfg.rdh_sources is not None else None
+    )
+    if rdh_sources is not None and not rdh_sources.is_file():
+        raise FetchError(
+            f"RDH sources 配置不存在: {rdh_sources}"
+            "（配置 rdh_sources，或写绝对路径/项目根相对路径）")
+    source_args = ["--sources", str(rdh_sources)] if rdh_sources is not None else []
     python = _resolve_interpreter(cfg.rdh_python, rdh_repo, project_root)
     if runner is None and not (Path(python).is_file() or shutil.which(python)):
         raise FetchError(
@@ -376,14 +388,15 @@ def run_rdh_fetch(catalog: Catalog | None, cfg: RdhFetchConfig, project_root: Pa
         # dry-run 不建目录、不写事件、不碰 catalog
         commands = []
         if plan_id is None:
-            commands.append(_argv(python, "plan", "create", str(request_file)))
-        commands.append(_argv(python, "task", "run", plan_id or "<plan_id>"))
+            commands.append(_argv(python, "plan", "create", str(request_file), *source_args))
+        commands.append(_argv(python, "task", "run", plan_id or "<plan_id>", *source_args))
         commands.append(_argv(python, "report", "generate", request_id or "<request_id>"))
         return {
             "dry_run": True,
             "rdh_repo": str(rdh_repo),
             "rdh_python": python,
             "request_file": str(request_file),
+            "rdh_sources": str(rdh_sources) if rdh_sources is not None else None,
             "request_id": request_id,
             "plan_id": plan_id,
             "storage_root": str(storage_root),
@@ -402,7 +415,10 @@ def run_rdh_fetch(catalog: Catalog | None, cfg: RdhFetchConfig, project_root: Pa
     if plan_id is not None:
         plan_mode = "reuse"
     else:
-        output = runner(_argv(python, "plan", "create", str(request_file)), cfg.timeout_s)
+        output = runner(
+            _argv(python, "plan", "create", str(request_file), *source_args),
+            cfg.timeout_s,
+        )
         plan_id = _parse_plan_id(output)
         if plan_id is None:
             tail = _strip_ansi(output).strip()[-300:]
@@ -420,7 +436,7 @@ def run_rdh_fetch(catalog: Catalog | None, cfg: RdhFetchConfig, project_root: Pa
     log.info("rdh plan %s（%s）request=%s", plan_id, plan_mode, request_id)
 
     # 2) 执行任务 + 生成报告（报告会写出交付清单 JSON）
-    runner(_argv(python, "task", "run", plan_id), cfg.timeout_s)
+    runner(_argv(python, "task", "run", plan_id, *source_args), cfg.timeout_s)
     _write_event(writer, {"event": "rdh_task", "plan_id": plan_id,
                           "request_id": request_id, "command": "task run"})
     runner(_argv(python, "report", "generate", request_id), cfg.timeout_s)

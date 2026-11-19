@@ -326,6 +326,31 @@ def test_plan_id_reuse_skips_plan_create(rdh_env, cat):
     assert ["plan", "create"] not in [call[3:5] for call in fake.calls]
 
 
+def test_rdh_sources_is_passed_to_plan_and_task(rdh_env, cat):
+    """NCAR-only 配置必须透传到 plan create 与 task run。"""
+    sources = rdh_env.project_root / "configs" / "sources_ncar_only.yaml"
+    sources.parent.mkdir(parents=True)
+    sources.write_text("sources: {}\n", encoding="utf-8")
+    cfg = rdh_env.config(rdh_sources=str(sources))
+    fake = FakeRdh(rdh_env.storage_root)
+
+    run_rdh_fetch(cat, cfg, rdh_env.project_root, runner=fake)
+
+    plan_call, task_call, report_call = fake.calls
+    assert plan_call[-2:] == ["--sources", str(sources)]
+    assert task_call[-2:] == ["--sources", str(sources)]
+    assert "--sources" not in report_call
+
+
+def test_rdh_sources_missing_fails_before_commands(rdh_env):
+    """配置了不存在的 sources 文件时必须在拉起 RDH 前明确失败。"""
+    cfg = rdh_env.config(rdh_sources="/definitely/missing/sources.yaml")
+    fake = FakeRdh(rdh_env.storage_root)
+    with pytest.raises(FetchError, match="sources 配置不存在"):
+        run_rdh_fetch(None, cfg, rdh_env.project_root, runner=fake)
+    assert fake.calls == []
+
+
 # --------------------------------------------------------------------------
 # 失败路径
 # --------------------------------------------------------------------------
@@ -422,6 +447,15 @@ def test_dry_run_prints_commands_without_side_effects(rdh_env):
                for cmd in plan["commands"])
     assert not (rdh_env.project_root / "data").exists()
     assert not (rdh_env.storage_root / "deliveries").exists()
+
+
+def test_dry_run_includes_rdh_sources(rdh_env):
+    sources = rdh_env.project_root / "sources.yaml"
+    sources.write_text("sources: {}\n", encoding="utf-8")
+    cfg = rdh_env.config(rdh_python=sys.executable, rdh_sources=str(sources))
+    plan = run_rdh_fetch(None, cfg, rdh_env.project_root, dry_run=True)
+    assert plan["rdh_sources"] == str(sources)
+    assert all(call[-2:] == ["--sources", str(sources)] for call in plan["commands"][:2])
 
 
 def test_cli_rdh_dry_run(rdh_env, capsys):

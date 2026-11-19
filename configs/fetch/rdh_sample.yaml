@@ -19,6 +19,11 @@ rdh_repo: /Users/apple/Desktop/ResearchDataHub
 rdh_python: /Users/apple/Desktop/ResearchDataHub/.venv/bin/python
 request_file: examples/era5-clwc-ciwc-tp-2024-01-01.yaml
 
+# 可选：显式 RDH sources YAML。NCAR-only 等不需要 CDS 的任务请填写此项，
+# 驱动会把 --sources 同时传给 plan create 与 task run。
+# 相对路径先按项目根、再按 rdh_repo 解析；建议使用绝对路径。
+# rdh_sources: /Users/apple/Desktop/ResearchDataHub/configs/sources_ncar_only.yaml
+
 # RDH 的 storage.root（交付清单在 <storage_root>/deliveries/，原始文件在 raw/ 下）
 storage_root: ~/.rdh
 

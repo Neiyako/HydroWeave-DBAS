@@ -7,6 +7,16 @@
 
 ---
 
+## [Unreleased] - 2026-11-19
+
+### 修复
+
+- **DBAS-001**：`rdh fetch` 新增可选 `rdh_sources` 配置，并把 `--sources <path>`
+  透传给 RDH 的 `plan create` 与 `task run`。NCAR-only 任务不再需要 dummy
+  `CDSAPI_KEY`；dry-run 会展示同样的参数，缺失路径在启动子进程前明确失败。
+
+---
+
 ## [1.0.0] - 2026-11-03
 
 首个稳定版本。DBAS 从实验仓剥离，定位收敛为**科研数据资产管理与任务编排**。
